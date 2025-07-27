@@ -1,0 +1,70 @@
+{
+  "name": "blastore",
+  "version": "1.0.0",
+  "description": "Blazing-fast, type-safe key–value storage wrapper with zero overhead.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sergey-shablenko/blastore.git"
+  },
+  "keywords": [
+    "storage",
+    "typed",
+    "localStorage",
+    "asyncStorage",
+    "validation",
+    "typescript",
+    "zustand",
+    "valtio",
+    "fast",
+    "key-value",
+    "react"
+  ],
+  "exports": {
+    "./sync": {
+      "import": "./dist/web/sync.js",
+      "require": "./dist/node/sync.js",
+      "types": "./dist/web/sync.d.ts"
+    },
+    "./async": {
+      "import": "./dist/web/async.js",
+      "require": "./dist/node/async.js",
+      "types": "./dist/web/async.d.ts"
+    },
+    "./memory-storage": {
+      "import": "./dist/web/memory-storage.js",
+      "require": "./dist/node/memory-storage.js",
+      "types": "./dist/web/memory-storage.d.ts"
+    },
+    "./async-memory-storage": {
+      "import": "./dist/web/async-memory-storage.js",
+      "require": "./dist/node/async-memory-storage.js",
+      "types": "./dist/web/async-memory-storage.d.ts"
+    }
+  },
+  "files": [
+    "dist/node/*",
+    "dist/web/*",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "format": "prettier **/*.ts --write",
+    "build:node": "tsc -p tsconfig.node.json",
+    "build:web": "tsc -p tsconfig.web.json",
+    "build": "npm run build:node && npm run build:web",
+    "test": "vitest"
+  },
+  "devDependencies": {
+    "@types/benchmark": "^2.1.5",
+    "@types/node": "^24.1.0",
+    "benchmark": "^2.1.4",
+    "prettier": "^3.6.2",
+    "react": "^19.1.0",
+    "typescript": "^5.8.3",
+    "valtio": "^2.1.5",
+    "vitest": "^3.2.4",
+    "zustand": "^5.0.6"
+  }
+}

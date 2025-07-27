@@ -1,6 +1,6 @@
 {
   "name": "blastore",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Blazing-fast, type-safe key–value storage wrapper with zero overhead.",
   "type": "module",
   "license": "MIT",
@@ -21,6 +21,22 @@
     "key-value",
     "react"
   ],
+  "typesVersions": {
+    ">=4": {
+      "sync": [
+        "dist/web/sync.d.ts"
+      ],
+      "async": [
+        "dist/web/async.d.ts"
+      ],
+      "memory-storage": [
+        "dist/web/memory-storage.d.ts"
+      ],
+      "async-memory-storage": [
+        "dist/web/async-memory-storage.d.ts"
+      ]
+    }
+  },
   "exports": {
     "./sync": {
       "import": "./dist/web/sync.js",

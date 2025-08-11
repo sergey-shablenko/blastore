@@ -2,125 +2,29 @@ import { AsyncMemoryStorage } from './async-memory-storage';
 import { getFullKey, parseKey } from './util';
 const subscriptions = new WeakMap();
 const defaultStore = new AsyncMemoryStorage();
-export function buildAsync(scheme, store = defaultStore) {
-    // only holds compiled keys, not simple keys
-    const keys = Object.keys(scheme.validate).reduce((obj, key) => {
+export const buildAsync = ((schema, store = defaultStore, defaultOptions) => {
+    const keys = Object.freeze(Object.keys(schema.validate).reduce((obj, key) => {
         const parts = parseKey(key);
-        if (parts.length) {
-            obj[key] = new Function('vars', `return ${parts.map(([s, i]) => `'${s}' + (vars[${i}] === null ? '' : vars[${i}])`).join(' + ')};`);
+        if (parts.some(([, variable]) => variable)) {
+            obj[key] = new Function('vars', `return ${parts.map(([s, i]) => [`'${s}'`, i ? `vars${/^\d+$/i.test(i) || i === 'true' || i === 'false' ? `[${i}]` : /^([^0-9a-z]+|)$/i.test(i) ? `['${i}']` : `.${i}`}` : null].filter(Boolean).join(' + ')).join(' + ')};`);
         }
         return obj;
-    }, {});
-    const emit = (key, variables) => {
-        const subs = subscriptions
-            .get(store)
-            ?.get(getFullKey(keys, key, variables));
-        if (subs?.length) {
-            for (let i = 0; i < subs.length; i++) {
-                subs[i]();
-            }
-        }
-    };
-    const untypedEmit = (key) => emit(key);
-    const get = async (key, defaultValue, options) => {
-        try {
-            const deserializer = scheme.deserialize?.[key] ?? scheme.defaultDeserialize;
-            const value = await store.getItem(getFullKey(keys, key, options?.variables));
-            const validated = await scheme.validate[key](deserializer ? await deserializer(value) : value);
-            if (validated instanceof Error) {
-                return defaultValue;
-            }
-            return validated;
-        }
-        catch (e) {
-            console.error(e);
-            return defaultValue;
-        }
-    };
-    const tryGet = async (key, options) => {
-        try {
-            const deserializer = scheme.deserialize?.[key] ?? scheme.defaultDeserialize;
-            const value = await store.getItem(getFullKey(keys, key, options?.variables));
-            return scheme.validate[key](deserializer ? await deserializer(value) : value);
-        }
-        catch (e) {
-            return e instanceof Error ? e : new Error(String(e));
-        }
-    };
-    const set = async (key, value, options) => {
-        try {
-            const validated = await scheme.validate[key](value);
-            if (validated instanceof Error) {
-                return false;
-            }
-            const serializer = scheme.serialize?.[key] ?? scheme.defaultSerialize;
-            const fullKey = getFullKey(keys, key, options?.variables);
-            await store.setItem(fullKey, serializer
-                ? await serializer(validated)
-                : validated);
-            untypedEmit(fullKey);
-            return true;
-        }
-        catch (e) {
-            console.error(e);
-            return false;
-        }
-    };
-    const trySet = async (key, value, options) => {
-        try {
-            const validated = await scheme.validate[key](value);
-            if (validated instanceof Error) {
-                return validated;
-            }
-            const serializer = scheme.serialize?.[key] ?? scheme.defaultSerialize;
-            const fullKey = getFullKey(keys, key, options?.variables);
-            await store.setItem(fullKey, serializer
-                ? await serializer(validated)
-                : validated);
-            untypedEmit(fullKey);
-        }
-        catch (e) {
-            return e instanceof Error ? e : new Error(String(e));
-        }
-    };
-    const remove = async (key, variables) => {
-        try {
-            const fullKey = getFullKey(keys, key, variables);
-            await store.removeItem(fullKey);
-            untypedEmit(fullKey);
-            return true;
-        }
-        catch (e) {
-            console.error(e);
-            return false;
-        }
-    };
-    const tryRemove = async (key, variables) => {
-        try {
-            const fullKey = getFullKey(keys, key, variables);
-            await store.removeItem(fullKey);
-            untypedEmit(fullKey);
-        }
-        catch (e) {
-            return e instanceof Error ? e : new Error(String(e));
-        }
-    };
-    const subscribe = (key, trigger, options) => {
+    }, {}));
+    const untypedSubscribe = (key, trigger) => {
         let storeSubscriptions = subscriptions.get(store);
-        const fullKey = getFullKey(keys, key, options?.variables);
         if (!storeSubscriptions) {
             storeSubscriptions = new Map();
             subscriptions.set(store, storeSubscriptions);
         }
-        const subscriber = storeSubscriptions.get(fullKey);
+        const subscriber = storeSubscriptions.get(key);
         if (subscriber) {
             subscriber.push(trigger);
         }
         else {
-            storeSubscriptions.set(fullKey, [trigger]);
+            storeSubscriptions.set(key, [trigger]);
         }
         return () => {
-            const subs = storeSubscriptions.get(fullKey);
+            const subs = storeSubscriptions.get(key);
             if (!subs) {
                 return;
             }
@@ -128,130 +32,254 @@ export function buildAsync(scheme, store = defaultStore) {
             subs.pop();
         };
     };
-    const untypedSubscribe = (key, trigger) => subscribe(key, trigger);
-    const buildKeyApi = (key, variables) => {
-        const validator = scheme.validate[key];
-        const serializer = scheme.serialize?.[key] ?? scheme.defaultSerialize;
-        const deserializer = scheme.deserialize?.[key] ?? scheme.defaultDeserialize;
-        const precompiledKey = getFullKey(keys, key, variables);
-        const emit = () => {
-            const subs = subscriptions.get(store)?.get(precompiledKey);
-            if (subs?.length) {
-                for (let i = 0; i < subs.length; i++) {
-                    subs[i]();
-                }
+    const subscribe = (key, trigger, options) => {
+        const fullKey = options?.variables
+            ? getFullKey(keys, key, options.variables)
+            : key;
+        return untypedSubscribe(fullKey, trigger);
+    };
+    const untypedEmit = (key) => {
+        const storeSubs = subscriptions.get(store);
+        const subs = storeSubs && storeSubs.get(key);
+        if (subs && subs.length) {
+            for (let i = 0; i < subs.length; i++) {
+                subs[i]();
             }
-        };
-        const get = async (defaultValue) => {
-            try {
-                const value = await store.getItem(precompiledKey);
-                const validated = await validator(deserializer ? await deserializer(value) : value);
-                if (validated instanceof Error) {
+        }
+    };
+    const emit = (key, variables) => {
+        const fullKey = variables ? getFullKey(keys, key, variables) : key;
+        untypedEmit(fullKey);
+    };
+    const get = async (key, defaultValue, options) => {
+        const deserializer = typeof schema.deserialize?.[key] === 'function'
+            ? schema.deserialize[key]
+            : typeof schema.defaultDeserialize === 'function'
+                ? schema.defaultDeserialize
+                : undefined;
+        let fullKey = key;
+        let out = undefined;
+        let validate = defaultOptions?.validateOnGet === true;
+        const validator = schema.validate[key];
+        if (options) {
+            if (options.variables) {
+                fullKey = getFullKey(keys, key, options.variables);
+            }
+            if (options.out && typeof options.out === 'object') {
+                out = options.out;
+            }
+            if (typeof options.validate === 'boolean') {
+                validate = options.validate;
+            }
+        }
+        try {
+            let value = await store.getItem(fullKey);
+            if (deserializer) {
+                value = await deserializer(value);
+            }
+            if (validate) {
+                value = await validator(value);
+                if (value instanceof Error) {
+                    if (out) {
+                        out.error = value;
+                    }
                     return defaultValue;
                 }
-                return validated;
+            }
+            return value;
+        }
+        catch (e) {
+            if (out) {
+                out.error = e instanceof Error ? e : new Error(String(e));
+            }
+            return defaultValue;
+        }
+    };
+    const set = async (key, value, options) => {
+        const serializer = typeof schema.serialize?.[key] === 'function'
+            ? schema.serialize[key]
+            : typeof schema.defaultSerialize === 'function'
+                ? schema.defaultSerialize
+                : undefined;
+        let fullKey = key;
+        let out = undefined;
+        let validate = defaultOptions?.validateOnSet === true;
+        const validator = schema.validate[key];
+        if (options) {
+            if (options.variables) {
+                fullKey = getFullKey(keys, key, options.variables);
+            }
+            if (options.out && typeof options.out === 'object') {
+                out = options.out;
+            }
+            if (typeof options.validate === 'boolean') {
+                validate = options.validate;
+            }
+        }
+        try {
+            let insertValue = value;
+            if (validate) {
+                insertValue = await validator(insertValue);
+                if (insertValue instanceof Error) {
+                    if (out) {
+                        out.error = insertValue;
+                    }
+                    return false;
+                }
+            }
+            if (serializer) {
+                insertValue = await serializer(insertValue);
+            }
+            await store.setItem(fullKey, insertValue);
+            untypedEmit(fullKey);
+            return true;
+        }
+        catch (e) {
+            if (out) {
+                out.error = e instanceof Error ? e : new Error(String(e));
+            }
+            return false;
+        }
+    };
+    const remove = async (key, options) => {
+        let fullKey = key;
+        let out = undefined;
+        if (options) {
+            if (options.variables) {
+                fullKey = getFullKey(keys, key, options.variables);
+            }
+            if (options.out && typeof options.out === 'object') {
+                out = options.out;
+            }
+        }
+        try {
+            await store.removeItem(fullKey);
+            untypedEmit(fullKey);
+            return true;
+        }
+        catch (e) {
+            if (out) {
+                out.error = e instanceof Error ? e : new Error(String(e));
+            }
+            return false;
+        }
+    };
+    const buildKeyApi = (key, options) => {
+        const deserializer = typeof schema.deserialize?.[key] === 'function'
+            ? schema.deserialize[key]
+            : typeof schema.defaultDeserialize === 'function'
+                ? schema.defaultDeserialize
+                : undefined;
+        const serializer = typeof schema.serialize?.[key] === 'function'
+            ? schema.serialize[key]
+            : typeof schema.defaultSerialize === 'function'
+                ? schema.defaultSerialize
+                : undefined;
+        let fullKey = key;
+        let out = undefined;
+        let validateOnSet = defaultOptions?.validateOnSet === true;
+        let validateOnGet = defaultOptions?.validateOnGet === true;
+        const validator = schema.validate[key];
+        if (options) {
+            if (options.variables) {
+                fullKey = getFullKey(keys, key, options.variables);
+            }
+            if (options.out && typeof options.out === 'object') {
+                out = options.out;
+            }
+            if (typeof options.validateOnSet === 'boolean') {
+                validateOnSet = options.validateOnSet;
+            }
+            if (typeof options.validateOnGet === 'boolean') {
+                validateOnGet = options.validateOnGet;
+            }
+        }
+        const _emit = () => {
+            untypedEmit(fullKey);
+        };
+        const _get = async (defaultValue) => {
+            try {
+                let value = await store.getItem(fullKey);
+                if (deserializer) {
+                    value = await deserializer(value);
+                }
+                if (validateOnGet) {
+                    value = await validator(value);
+                    if (value instanceof Error) {
+                        if (out) {
+                            out.error = value;
+                        }
+                        return defaultValue;
+                    }
+                }
+                return value;
             }
             catch (e) {
-                console.error(e);
+                if (out) {
+                    out.error = e instanceof Error ? e : new Error(String(e));
+                }
                 return defaultValue;
             }
         };
-        const tryGet = async () => {
+        const _set = async (value) => {
             try {
-                const value = await store.getItem(precompiledKey);
-                return validator(deserializer ? await deserializer(value) : value);
-            }
-            catch (e) {
-                return e instanceof Error ? e : new Error(String(e));
-            }
-        };
-        const set = async (value) => {
-            try {
-                const validated = await validator(value);
-                if (validated instanceof Error) {
-                    return false;
+                let insertValue = value;
+                if (validateOnSet) {
+                    insertValue = await validator(insertValue);
+                    if (insertValue instanceof Error) {
+                        if (out) {
+                            out.error = insertValue;
+                        }
+                        return false;
+                    }
                 }
-                await store.setItem(precompiledKey, serializer
-                    ? await serializer(validated)
-                    : validated);
-                untypedEmit(precompiledKey);
+                if (serializer) {
+                    insertValue = await serializer(insertValue);
+                }
+                await store.setItem(fullKey, insertValue);
+                untypedEmit(fullKey);
                 return true;
             }
             catch (e) {
-                console.error(e);
+                if (out) {
+                    out.error = e instanceof Error ? e : new Error(String(e));
+                }
                 return false;
             }
         };
-        const trySet = async (value) => {
+        const _remove = async () => {
             try {
-                const validated = await validator(value);
-                if (validated instanceof Error) {
-                    return validated;
-                }
-                await store.setItem(precompiledKey, serializer
-                    ? await serializer(validated)
-                    : validated);
-                untypedEmit(precompiledKey);
-            }
-            catch (e) {
-                return e instanceof Error ? e : new Error(String(e));
-            }
-        };
-        const remove = async () => {
-            try {
-                await store.removeItem(precompiledKey);
-                untypedEmit(precompiledKey);
+                await store.removeItem(fullKey);
+                untypedEmit(fullKey);
                 return true;
             }
             catch (e) {
-                console.error(e);
+                if (out) {
+                    out.error = e instanceof Error ? e : new Error(String(e));
+                }
                 return false;
             }
         };
-        const tryRemove = async () => {
-            try {
-                await store.removeItem(precompiledKey);
-                untypedEmit(precompiledKey);
-            }
-            catch (e) {
-                return e instanceof Error ? e : new Error(String(e));
-            }
+        const _subscribe = (trigger) => {
+            return untypedSubscribe(fullKey, trigger);
         };
-        const subscribe = (trigger) => {
-            let storeSubscriptions = subscriptions.get(store);
-            if (!storeSubscriptions) {
-                storeSubscriptions = new Map();
-                subscriptions.set(store, storeSubscriptions);
-            }
-            const subscriber = storeSubscriptions.get(precompiledKey);
-            if (subscriber) {
-                subscriber.push(trigger);
-            }
-            else {
-                storeSubscriptions.set(precompiledKey, [trigger]);
-            }
-            return () => {
-                const subs = storeSubscriptions.get(precompiledKey);
-                if (!subs) {
-                    return;
-                }
-                subs[subs.indexOf(trigger)] = subs[subs.length - 1];
-                subs.pop();
-            };
-        };
-        return { get, set, remove, trySet, tryGet, tryRemove, subscribe, emit };
+        return Object.freeze({
+            get: _get,
+            set: _set,
+            remove: _remove,
+            subscribe: _subscribe,
+            emit: _emit,
+        });
     };
     return {
+        schema,
         get,
         set,
         remove,
-        trySet,
-        tryGet,
-        tryRemove,
         subscribe,
         untypedSubscribe,
         emit,
         untypedEmit,
         buildKeyApi,
     };
-}
+});

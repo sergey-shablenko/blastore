@@ -1,4 +1,4 @@
-export interface Scheme<
+export interface SyncSchema<
   TValidate extends Record<string, (v: unknown) => unknown | Error>,
   TSerialize extends Partial<
     Record<
@@ -22,7 +22,7 @@ export interface Scheme<
   deserialize?: TDeserialize;
 }
 
-export interface AsyncScheme<
+export interface AsyncSchema<
   TValidate extends Record<string, (v: unknown) => Promise<unknown | Error>>,
   TSerialize extends Partial<
     Record<
@@ -72,6 +72,18 @@ export type Trigger = () => unknown;
 
 export type Unsubscribe = () => void;
 
-export type KeyId = string | number | boolean;
+export type KeyVariable = string | number | boolean;
 
-export type CompiledKeys = Record<string, (vars: KeyId[]) => string>;
+export type CompiledKeys = Record<
+  string,
+  (vars: Record<string, KeyVariable>) => string
+>;
+
+export type ExtractVars<S extends string> =
+  S extends `${string}\${${infer Var}}${infer Rest}`
+    ? Var | ExtractVars<Rest>
+    : never;
+
+export type KeyVariables<K extends string> = [ExtractVars<K>] extends [never]
+  ? { variables?: never } // no variables allowed
+  : { variables: Record<ExtractVars<K>, string> };

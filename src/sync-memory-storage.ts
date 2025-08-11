@@ -1,4 +1,4 @@
-export class MemoryStorage {
+export class SyncMemoryStorage {
   state: Record<string, any> = {};
 
   getItem(key: string) {

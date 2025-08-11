@@ -1,11 +1,11 @@
-export interface Scheme<TValidate extends Record<string, (v: unknown) => unknown | Error>, TSerialize extends Partial<Record<TSerializeKey, (v: Exclude<ReturnType<TValidate[TSerializeKey]>, Error>) => unknown>>, TDeserialize extends Partial<Record<TDeserializeKey, (v: unknown) => Exclude<ReturnType<TValidate[TDeserializeKey]>, Error>>>, TSerializeKey extends keyof TValidate, TDeserializeKey extends keyof TValidate> {
+export interface SyncSchema<TValidate extends Record<string, (v: unknown) => unknown | Error>, TSerialize extends Partial<Record<TSerializeKey, (v: Exclude<ReturnType<TValidate[TSerializeKey]>, Error>) => unknown>>, TDeserialize extends Partial<Record<TDeserializeKey, (v: unknown) => Exclude<ReturnType<TValidate[TDeserializeKey]>, Error>>>, TSerializeKey extends keyof TValidate, TDeserializeKey extends keyof TValidate> {
     validate: TValidate;
     defaultSerialize?: (v: unknown) => unknown;
     defaultDeserialize?: (v: unknown) => unknown;
     serialize?: TSerialize;
     deserialize?: TDeserialize;
 }
-export interface AsyncScheme<TValidate extends Record<string, (v: unknown) => Promise<unknown | Error>>, TSerialize extends Partial<Record<TSerializeKey, (v: Exclude<Awaited<ReturnType<TValidate[TSerializeKey]>>, Error>) => Promise<unknown>>>, TDeserialize extends Partial<Record<TDeserializeKey, (v: unknown) => Promise<Exclude<Awaited<ReturnType<TValidate[TDeserializeKey]>>, Error>>>>, TSerializeKey extends keyof TValidate, TDeserializeKey extends keyof TValidate> {
+export interface AsyncSchema<TValidate extends Record<string, (v: unknown) => Promise<unknown | Error>>, TSerialize extends Partial<Record<TSerializeKey, (v: Exclude<Awaited<ReturnType<TValidate[TSerializeKey]>>, Error>) => Promise<unknown>>>, TDeserialize extends Partial<Record<TDeserializeKey, (v: unknown) => Promise<Exclude<Awaited<ReturnType<TValidate[TDeserializeKey]>>, Error>>>>, TSerializeKey extends keyof TValidate, TDeserializeKey extends keyof TValidate> {
     validate: TValidate;
     defaultSerialize?: (v: unknown) => Promise<unknown>;
     defaultDeserialize?: (v: unknown) => Promise<unknown>;
@@ -24,5 +24,11 @@ export interface AsyncStore {
 }
 export type Trigger = () => unknown;
 export type Unsubscribe = () => void;
-export type KeyId = string | number | boolean;
-export type CompiledKeys = Record<string, (vars: KeyId[]) => string>;
+export type KeyVariable = string | number | boolean;
+export type CompiledKeys = Record<string, (vars: Record<string, KeyVariable>) => string>;
+export type ExtractVars<S extends string> = S extends `${string}\${${infer Var}}${infer Rest}` ? Var | ExtractVars<Rest> : never;
+export type KeyVariables<K extends string> = [ExtractVars<K>] extends [never] ? {
+    variables?: never;
+} : {
+    variables: Record<ExtractVars<K>, string>;
+};

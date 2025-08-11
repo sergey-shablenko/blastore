@@ -1,10 +1,11 @@
 import type {
-  AsyncScheme,
-  AsyncStore,
   CompiledKeys,
-  KeyId,
+  KeyVariable,
+  AsyncSchema,
+  AsyncStore,
   Trigger,
   Unsubscribe,
+  KeyVariables,
 } from './types';
 import { AsyncMemoryStorage } from './async-memory-storage';
 import { getFullKey, parseKey } from './util';
@@ -13,7 +14,85 @@ const subscriptions = new WeakMap<AsyncStore, Map<string, Trigger[]>>();
 
 const defaultStore = new AsyncMemoryStorage();
 
-export function buildAsync<
+export type BuildAsync<
+  TValidate extends Record<string, (v: unknown) => Promise<unknown | Error>>,
+  TSerialize extends Partial<
+    Record<
+      TKey,
+      (
+        v: Exclude<Awaited<ReturnType<TValidate[TKey]>>, Error>
+      ) => Promise<unknown>
+    >
+  >,
+  TDeserialize extends Partial<
+    Record<
+      TKey,
+      (
+        v: unknown
+      ) => Promise<Exclude<Awaited<ReturnType<TValidate[TKey]>>, Error>>
+    >
+  >,
+  TKey extends keyof TValidate & string,
+> = (
+  schema: AsyncSchema<TValidate, TSerialize, TDeserialize, TKey, TKey>,
+  store: AsyncStore,
+  defaultOptions?: { validateOnGet?: boolean; validateOnSet?: boolean }
+) => {
+  schema: AsyncSchema<TValidate, TSerialize, TDeserialize, TKey, TKey>;
+  get<TGetKey extends TKey>(
+    key: TGetKey,
+    defaultValue: Exclude<Awaited<ReturnType<TValidate[TGetKey]>>, Error>,
+    options?: KeyVariables<TGetKey> & {
+      validate?: boolean;
+      out?: { error?: Error };
+    }
+  ): Promise<Exclude<Awaited<ReturnType<TValidate[TGetKey]>>, Error>>;
+  set<TSetKey extends TKey>(
+    key: TSetKey,
+    value: Exclude<Awaited<ReturnType<TValidate[TSetKey]>>, Error>,
+    options?: KeyVariables<TSetKey> & {
+      validate?: boolean;
+      out?: { error?: Error };
+    }
+  ): Promise<boolean>;
+  remove<TRemoveKey extends TKey>(
+    key: TRemoveKey,
+    options?: KeyVariables<TRemoveKey> & {
+      out?: { error?: Error };
+    }
+  ): Promise<boolean>;
+  subscribe<TSubKey extends TKey>(
+    key: TSubKey,
+    trigger: Trigger,
+    options?: KeyVariables<TSubKey>
+  ): Unsubscribe;
+  untypedSubscribe(key: string, trigger: Trigger): Unsubscribe;
+  emit<TEmitKey extends TKey>(
+    key: TEmitKey,
+    variables?: KeyVariables<TEmitKey>['variables']
+  ): void;
+  untypedEmit(key: string): void;
+  buildKeyApi: <TApiKey extends TKey>(
+    key: TApiKey,
+    options?: KeyVariables<TApiKey> & {
+      validateOnGet?: boolean;
+      validateOnSet?: boolean;
+      out?: { error?: Error };
+    }
+  ) => {
+    get(
+      defaultValue: Exclude<Awaited<ReturnType<TValidate[TApiKey]>>, Error>
+    ): Promise<Exclude<Awaited<ReturnType<TValidate[TApiKey]>>, Error>>;
+    set(
+      value: Exclude<Awaited<ReturnType<TValidate[TApiKey]>>, Error>
+    ): Promise<boolean>;
+    remove(): Promise<boolean>;
+    subscribe(trigger: Trigger): Unsubscribe;
+    emit(): void;
+  };
+};
+
+export const buildAsync = (<
   TValidate extends Record<string, (v: unknown) => Promise<unknown | Error>>,
   TSerialize extends Partial<
     Record<
@@ -33,190 +112,43 @@ export function buildAsync<
   >,
   TKey extends keyof TValidate & string,
 >(
-  scheme: AsyncScheme<TValidate, TSerialize, TDeserialize, TKey, TKey>,
-  store: AsyncStore = defaultStore satisfies AsyncStore
-) {
-  // only holds compiled keys, not simple keys
-  const keys = Object.keys(scheme.validate).reduce((obj, key) => {
-    const parts = parseKey(key);
-    if (parts.length) {
-      obj[key] = new Function(
-        'vars',
-        `return ${parts.map(([s, i]) => `'${s}' + (vars[${i}] === null ? '' : vars[${i}])`).join(' + ')};`
-      ) as (vars: KeyId[]) => string;
-    }
-    return obj;
-  }, {} as CompiledKeys);
-
-  const emit = (key: TKey, variables?: KeyId[]): void => {
-    const subs = subscriptions
-      .get(store)
-      ?.get(getFullKey(keys, key, variables));
-    if (subs?.length) {
-      for (let i = 0; i < subs.length; i++) {
-        subs[i]();
+  schema: AsyncSchema<TValidate, TSerialize, TDeserialize, TKey, TKey>,
+  store: AsyncStore = defaultStore satisfies AsyncStore,
+  defaultOptions?: { validateOnGet?: boolean; validateOnSet?: boolean }
+) => {
+  const keys = Object.freeze(
+    Object.keys(schema.validate).reduce((obj, key) => {
+      const parts = parseKey(key);
+      if (parts.some(([, variable]) => variable)) {
+        obj[key] = new Function(
+          'vars',
+          `return ${parts.map(([s, i]) => [`'${s}'`, i ? `vars${/^\d+$/i.test(i) || i === 'true' || i === 'false' ? `[${i}]` : /^([^0-9a-z]+|)$/i.test(i) ? `['${i}']` : `.${i}`}` : null].filter(Boolean).join(' + ')).join(' + ')};`
+        ) as (vars: Record<string, KeyVariable>) => string;
       }
-    }
-  };
+      return obj;
+    }, {} as CompiledKeys)
+  );
 
-  const untypedEmit = (key: string): void => emit(key as TKey);
-
-  const get = async <TGetKey extends TKey>(
-    key: TGetKey,
-    defaultValue: Exclude<Awaited<ReturnType<TValidate[TGetKey]>>, Error>,
-    options?: { variables?: KeyId[] }
-  ): Promise<Exclude<Awaited<ReturnType<TValidate[TGetKey]>>, Error>> => {
-    try {
-      const deserializer =
-        scheme.deserialize?.[key] ?? scheme.defaultDeserialize;
-      const value = await store.getItem(
-        getFullKey(keys, key, options?.variables)
-      );
-      const validated = await scheme.validate[key](
-        deserializer ? await deserializer(value) : value
-      );
-      if (validated instanceof Error) {
-        return defaultValue;
-      }
-      return validated as Exclude<
-        Awaited<ReturnType<TValidate[TGetKey]>>,
-        Error
-      >;
-    } catch (e) {
-      console.error(e);
-      return defaultValue;
-    }
-  };
-
-  const tryGet = async <TGetKey extends TKey>(
-    key: TGetKey,
-    options?: { variables?: KeyId[] }
-  ): Promise<ReturnType<TValidate[TGetKey]> | Error> => {
-    try {
-      const deserializer =
-        scheme.deserialize?.[key] ?? scheme.defaultDeserialize;
-      const value = await store.getItem(
-        getFullKey(keys, key, options?.variables)
-      );
-      return scheme.validate[key](
-        deserializer ? await deserializer(value) : value
-      ) as ReturnType<TValidate[TGetKey]>;
-    } catch (e) {
-      return e instanceof Error ? e : new Error(String(e));
-    }
-  };
-
-  const set = async <TSetKey extends TKey>(
-    key: TSetKey,
-    value: Exclude<Awaited<ReturnType<TValidate[TSetKey]>>, Error>,
-    options?: { variables?: KeyId[] }
-  ): Promise<boolean> => {
-    try {
-      const validated = await scheme.validate[key](value);
-      if (validated instanceof Error) {
-        return false;
-      }
-      const serializer = scheme.serialize?.[key] ?? scheme.defaultSerialize;
-      const fullKey = getFullKey(keys, key, options?.variables);
-      await store.setItem(
-        fullKey,
-        serializer
-          ? await serializer(
-              validated as Exclude<
-                Awaited<ReturnType<TValidate[TSetKey]>>,
-                Error
-              >
-            )
-          : validated
-      );
-      untypedEmit(fullKey);
-      return true;
-    } catch (e) {
-      console.error(e);
-      return false;
-    }
-  };
-
-  const trySet = async <TSetKey extends TKey>(
-    key: TSetKey,
-    value: Exclude<Awaited<ReturnType<TValidate[TSetKey]>>, Error>,
-    options?: { variables?: KeyId[] }
-  ): Promise<void | Error> => {
-    try {
-      const validated = await scheme.validate[key](value);
-      if (validated instanceof Error) {
-        return validated;
-      }
-      const serializer = scheme.serialize?.[key] ?? scheme.defaultSerialize;
-      const fullKey = getFullKey(keys, key, options?.variables);
-      await store.setItem(
-        fullKey,
-        serializer
-          ? await serializer(
-              validated as Exclude<
-                Awaited<ReturnType<TValidate[TSetKey]>>,
-                Error
-              >
-            )
-          : validated
-      );
-      untypedEmit(fullKey);
-    } catch (e) {
-      return e instanceof Error ? e : new Error(String(e));
-    }
-  };
-
-  const remove = async <TRemoveKey extends TKey>(
-    key: TRemoveKey,
-    variables?: KeyId[]
-  ): Promise<boolean> => {
-    try {
-      const fullKey = getFullKey(keys, key, variables);
-      await store.removeItem(fullKey);
-      untypedEmit(fullKey);
-      return true;
-    } catch (e) {
-      console.error(e);
-      return false;
-    }
-  };
-
-  const tryRemove = async <TRemoveKey extends TKey>(
-    key: TRemoveKey,
-    variables?: KeyId[]
-  ): Promise<void | Error> => {
-    try {
-      const fullKey = getFullKey(keys, key, variables);
-      await store.removeItem(fullKey);
-      untypedEmit(fullKey);
-    } catch (e) {
-      return e instanceof Error ? e : new Error(String(e));
-    }
-  };
-
-  const subscribe = <TSubKey extends TKey>(
-    key: TSubKey,
-    trigger: Trigger,
-    options?: { variables?: KeyId[] }
-  ): Unsubscribe => {
+  const untypedSubscribe: ReturnType<
+    BuildAsync<TValidate, TSerialize, TDeserialize, TKey>
+  >['untypedSubscribe'] = (key, trigger) => {
     let storeSubscriptions = subscriptions.get(store);
-    const fullKey = getFullKey(keys, key, options?.variables);
 
     if (!storeSubscriptions) {
       storeSubscriptions = new Map<string, Trigger[]>();
       subscriptions.set(store, storeSubscriptions);
     }
 
-    const subscriber = storeSubscriptions.get(fullKey);
+    const subscriber = storeSubscriptions.get(key);
 
     if (subscriber) {
       subscriber.push(trigger);
     } else {
-      storeSubscriptions.set(fullKey, [trigger]);
+      storeSubscriptions.set(key, [trigger]);
     }
 
     return () => {
-      const subs = storeSubscriptions.get(fullKey);
+      const subs = storeSubscriptions.get(key);
       if (!subs) {
         return;
       }
@@ -225,173 +157,315 @@ export function buildAsync<
     };
   };
 
-  const untypedSubscribe = (key: string, trigger: Trigger) =>
-    subscribe(key as TKey, trigger);
+  const subscribe: ReturnType<
+    BuildAsync<TValidate, TSerialize, TDeserialize, TKey>
+  >['subscribe'] = (key, trigger, options) => {
+    const fullKey = options?.variables
+      ? getFullKey(keys, key, options.variables)
+      : key;
+    return untypedSubscribe(fullKey, trigger);
+  };
 
-  const buildKeyApi = <TApiKey extends TKey>(
-    key: TApiKey,
-    variables?: KeyId[]
-  ) => {
-    const validator = scheme.validate[key];
-    const serializer = scheme.serialize?.[key] ?? scheme.defaultSerialize;
-    const deserializer = scheme.deserialize?.[key] ?? scheme.defaultDeserialize;
-    const precompiledKey = getFullKey(keys, key, variables);
-
-    const emit = (): void => {
-      const subs = subscriptions.get(store)?.get(precompiledKey);
-      if (subs?.length) {
-        for (let i = 0; i < subs.length; i++) {
-          subs[i]();
-        }
+  const untypedEmit: ReturnType<
+    BuildAsync<TValidate, TSerialize, TDeserialize, TKey>
+  >['untypedEmit'] = (key) => {
+    const storeSubs = subscriptions.get(store);
+    const subs = storeSubs && storeSubs.get(key);
+    if (subs && subs.length) {
+      for (let i = 0; i < subs.length; i++) {
+        subs[i]();
       }
-    };
+    }
+  };
 
-    const get = async (
-      defaultValue: Exclude<Awaited<ReturnType<TValidate[TApiKey]>>, Error>
-    ): Promise<Exclude<Awaited<ReturnType<TValidate[TApiKey]>>, Error>> => {
-      try {
-        const value = await store.getItem(precompiledKey);
-        const validated = await validator(
-          deserializer ? await deserializer(value) : value
-        );
-        if (validated instanceof Error) {
+  const emit: ReturnType<
+    BuildAsync<TValidate, TSerialize, TDeserialize, TKey>
+  >['emit'] = (key, variables) => {
+    const fullKey = variables ? getFullKey(keys, key, variables) : key;
+    untypedEmit(fullKey);
+  };
+
+  const get: ReturnType<
+    BuildAsync<TValidate, TSerialize, TDeserialize, TKey>
+  >['get'] = async (key, defaultValue, options) => {
+    const deserializer =
+      typeof schema.deserialize?.[key] === 'function'
+        ? schema.deserialize[key]
+        : typeof schema.defaultDeserialize === 'function'
+          ? schema.defaultDeserialize
+          : undefined;
+    let fullKey = key;
+    let out = undefined;
+    let validate = defaultOptions?.validateOnGet === true;
+    const validator = schema.validate[key];
+
+    if (options) {
+      if (options.variables) {
+        fullKey = getFullKey(keys, key, options.variables) as any;
+      }
+      if (options.out && typeof options.out === 'object') {
+        out = options.out;
+      }
+      if (typeof options.validate === 'boolean') {
+        validate = options.validate;
+      }
+    }
+
+    try {
+      let value = await store.getItem(fullKey);
+
+      if (deserializer) {
+        value = await deserializer(value);
+      }
+
+      if (validate) {
+        value = await validator(value);
+
+        if (value instanceof Error) {
+          if (out) {
+            out.error = value;
+          }
           return defaultValue;
         }
-        return validated as Exclude<
-          Awaited<ReturnType<TValidate[TApiKey]>>,
+      }
+
+      return value as Exclude<Awaited<ReturnType<TValidate[TKey]>>, Error>;
+    } catch (e) {
+      if (out) {
+        out.error = e instanceof Error ? e : new Error(String(e));
+      }
+      return defaultValue;
+    }
+  };
+
+  const set: ReturnType<
+    BuildAsync<TValidate, TSerialize, TDeserialize, TKey>
+  >['set'] = async (key, value, options) => {
+    const serializer =
+      typeof schema.serialize?.[key] === 'function'
+        ? schema.serialize[key]
+        : typeof schema.defaultSerialize === 'function'
+          ? schema.defaultSerialize
+          : undefined;
+    let fullKey = key;
+    let out = undefined;
+    let validate = defaultOptions?.validateOnSet === true;
+    const validator = schema.validate[key];
+
+    if (options) {
+      if (options.variables) {
+        fullKey = getFullKey(keys, key, options.variables) as any;
+      }
+      if (options.out && typeof options.out === 'object') {
+        out = options.out;
+      }
+      if (typeof options.validate === 'boolean') {
+        validate = options.validate;
+      }
+    }
+
+    try {
+      let insertValue: unknown = value;
+      if (validate) {
+        insertValue = await validator(insertValue);
+
+        if (insertValue instanceof Error) {
+          if (out) {
+            out.error = insertValue;
+          }
+          return false;
+        }
+      }
+      if (serializer) {
+        insertValue = await serializer(insertValue as any);
+      }
+      await store.setItem(fullKey, insertValue);
+      untypedEmit(fullKey);
+      return true;
+    } catch (e) {
+      if (out) {
+        out.error = e instanceof Error ? e : new Error(String(e));
+      }
+      return false;
+    }
+  };
+
+  const remove: ReturnType<
+    BuildAsync<TValidate, TSerialize, TDeserialize, TKey>
+  >['remove'] = async (key, options) => {
+    let fullKey = key;
+    let out = undefined;
+
+    if (options) {
+      if (options.variables) {
+        fullKey = getFullKey(keys, key, options.variables) as any;
+      }
+      if (options.out && typeof options.out === 'object') {
+        out = options.out;
+      }
+    }
+
+    try {
+      await store.removeItem(fullKey);
+      untypedEmit(fullKey);
+      return true;
+    } catch (e) {
+      if (out) {
+        out.error = e instanceof Error ? e : new Error(String(e));
+      }
+      return false;
+    }
+  };
+
+  const buildKeyApi: ReturnType<
+    BuildAsync<TValidate, TSerialize, TDeserialize, TKey>
+  >['buildKeyApi'] = (key, options) => {
+    const deserializer =
+      typeof schema.deserialize?.[key] === 'function'
+        ? schema.deserialize[key]
+        : typeof schema.defaultDeserialize === 'function'
+          ? schema.defaultDeserialize
+          : undefined;
+    const serializer =
+      typeof schema.serialize?.[key] === 'function'
+        ? schema.serialize[key]
+        : typeof schema.defaultSerialize === 'function'
+          ? schema.defaultSerialize
+          : undefined;
+    let fullKey = key;
+    let out = undefined;
+    let validateOnSet = defaultOptions?.validateOnSet === true;
+    let validateOnGet = defaultOptions?.validateOnGet === true;
+    const validator = schema.validate[key];
+
+    if (options) {
+      if (options.variables) {
+        fullKey = getFullKey(keys, key, options.variables) as any;
+      }
+      if (options.out && typeof options.out === 'object') {
+        out = options.out;
+      }
+      if (typeof options.validateOnSet === 'boolean') {
+        validateOnSet = options.validateOnSet;
+      }
+      if (typeof options.validateOnGet === 'boolean') {
+        validateOnGet = options.validateOnGet;
+      }
+    }
+
+    const _emit: ReturnType<
+      ReturnType<
+        BuildAsync<TValidate, TSerialize, TDeserialize, TKey>
+      >['buildKeyApi']
+    >['emit'] = () => {
+      untypedEmit(fullKey);
+    };
+
+    const _get: ReturnType<
+      ReturnType<
+        BuildAsync<TValidate, TSerialize, TDeserialize, TKey>
+      >['buildKeyApi']
+    >['get'] = async (defaultValue) => {
+      try {
+        let value = await store.getItem(fullKey);
+        if (deserializer) {
+          value = await deserializer(value);
+        }
+        if (validateOnGet) {
+          value = await validator(value);
+          if (value instanceof Error) {
+            if (out) {
+              out.error = value;
+            }
+            return defaultValue;
+          }
+        }
+        return value as Exclude<
+          Awaited<ReturnType<TValidate[typeof key]>>,
           Error
         >;
       } catch (e) {
-        console.error(e);
+        if (out) {
+          out.error = e instanceof Error ? e : new Error(String(e));
+        }
         return defaultValue;
       }
     };
 
-    const tryGet = async (): Promise<
-      ReturnType<TValidate[TApiKey]> | Error
-    > => {
+    const _set: ReturnType<
+      ReturnType<
+        BuildAsync<TValidate, TSerialize, TDeserialize, TKey>
+      >['buildKeyApi']
+    >['set'] = async (value) => {
       try {
-        const value = await store.getItem(precompiledKey);
-        return validator(
-          deserializer ? await deserializer(value) : value
-        ) as Awaited<ReturnType<TValidate[TApiKey]>>;
-      } catch (e) {
-        return e instanceof Error ? e : new Error(String(e));
-      }
-    };
+        let insertValue: unknown = value;
+        if (validateOnSet) {
+          insertValue = await validator(insertValue);
 
-    const set = async (
-      value: Exclude<Awaited<ReturnType<TValidate[TApiKey]>>, Error>
-    ): Promise<boolean> => {
-      try {
-        const validated = await validator(value);
-        if (validated instanceof Error) {
-          return false;
+          if (insertValue instanceof Error) {
+            if (out) {
+              out.error = insertValue;
+            }
+            return false;
+          }
         }
-        await store.setItem(
-          precompiledKey,
-          serializer
-            ? await serializer(
-                validated as Exclude<
-                  Awaited<ReturnType<TValidate[TApiKey]>>,
-                  Error
-                >
-              )
-            : validated
-        );
-        untypedEmit(precompiledKey);
+        if (serializer) {
+          insertValue = await serializer(insertValue as any);
+        }
+        await store.setItem(fullKey, insertValue);
+        untypedEmit(fullKey);
         return true;
       } catch (e) {
-        console.error(e);
+        if (out) {
+          out.error = e instanceof Error ? e : new Error(String(e));
+        }
         return false;
       }
     };
 
-    const trySet = async (
-      value: Exclude<Awaited<ReturnType<TValidate[TApiKey]>>, Error>
-    ): Promise<void | Error> => {
+    const _remove: ReturnType<
+      ReturnType<
+        BuildAsync<TValidate, TSerialize, TDeserialize, TKey>
+      >['buildKeyApi']
+    >['remove'] = async () => {
       try {
-        const validated = await validator(value);
-        if (validated instanceof Error) {
-          return validated;
-        }
-        await store.setItem(
-          precompiledKey,
-          serializer
-            ? await serializer(
-                validated as Exclude<
-                  Awaited<ReturnType<TValidate[TApiKey]>>,
-                  Error
-                >
-              )
-            : validated
-        );
-        untypedEmit(precompiledKey);
-      } catch (e) {
-        return e instanceof Error ? e : new Error(String(e));
-      }
-    };
-
-    const remove = async (): Promise<boolean> => {
-      try {
-        await store.removeItem(precompiledKey);
-        untypedEmit(precompiledKey);
+        await store.removeItem(fullKey);
+        untypedEmit(fullKey);
         return true;
       } catch (e) {
-        console.error(e);
+        if (out) {
+          out.error = e instanceof Error ? e : new Error(String(e));
+        }
         return false;
       }
     };
 
-    const tryRemove = async (): Promise<void | Error> => {
-      try {
-        await store.removeItem(precompiledKey);
-        untypedEmit(precompiledKey);
-      } catch (e) {
-        return e instanceof Error ? e : new Error(String(e));
-      }
+    const _subscribe: ReturnType<
+      ReturnType<
+        BuildAsync<TValidate, TSerialize, TDeserialize, TKey>
+      >['buildKeyApi']
+    >['subscribe'] = (trigger) => {
+      return untypedSubscribe(fullKey, trigger);
     };
 
-    const subscribe = (trigger: Trigger): Unsubscribe => {
-      let storeSubscriptions = subscriptions.get(store);
-
-      if (!storeSubscriptions) {
-        storeSubscriptions = new Map<string, Trigger[]>();
-        subscriptions.set(store, storeSubscriptions);
-      }
-
-      const subscriber = storeSubscriptions.get(precompiledKey);
-
-      if (subscriber) {
-        subscriber.push(trigger);
-      } else {
-        storeSubscriptions.set(precompiledKey, [trigger]);
-      }
-
-      return () => {
-        const subs = storeSubscriptions.get(precompiledKey);
-        if (!subs) {
-          return;
-        }
-        subs[subs.indexOf(trigger)] = subs[subs.length - 1];
-        subs.pop();
-      };
-    };
-
-    return { get, set, remove, trySet, tryGet, tryRemove, subscribe, emit };
+    return Object.freeze({
+      get: _get,
+      set: _set,
+      remove: _remove,
+      subscribe: _subscribe,
+      emit: _emit,
+    });
   };
 
   return {
+    schema,
     get,
     set,
     remove,
-    trySet,
-    tryGet,
-    tryRemove,
     subscribe,
     untypedSubscribe,
     emit,
     untypedEmit,
     buildKeyApi,
-  };
-}
+  } as ReturnType<BuildAsync<TValidate, TSerialize, TDeserialize, TKey>>;
+}) satisfies BuildAsync<any, any, any, any>;

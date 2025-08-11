@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { buildSync } from '../src/sync';
-import { MemoryStorage } from '../src/memory-storage';
+import { SyncMemoryStorage } from '../src/sync-memory-storage';
 
-describe(' mode test', () => {
+describe('sync mode test', () => {
+  const testMemStore = new SyncMemoryStorage();
   const store = buildSync(
     {
       validate: {
@@ -18,7 +19,8 @@ describe(' mode test', () => {
           v === null || typeof v === 'boolean' ? v : new Error('invalid'),
       },
     },
-    new MemoryStorage()
+    testMemStore,
+    { validateOnGet: true, validateOnSet: true }
   );
 
   it('get default value', () => {
@@ -38,62 +40,29 @@ describe(' mode test', () => {
     expect(store.get('simpleKey', null)).toBe(false);
     expect(store.set('simpleKey', {} as any)).toBe(false);
     expect(store.get('simpleKey', null)).toBe(false);
-    expect(store.set('dynamicKey${0}', true, { variables: [1] })).toBe(true);
-    expect(store.get('dynamicKey${0}', null, { variables: [1] })).toBe(true);
-    expect(
-      store.set('dynamicKey${alias}', true, { variables: ['alias'] })
-    ).toBe(true);
-    expect(
-      store.get('dynamicKey${alias}', null, { variables: ['alias'] })
-    ).toBe(true);
-    expect(store.set('dynamicKey${0}', 123 as any, { variables: [1] })).toBe(
-      false
+    expect(store.set('dynamicKey${0}', true, { variables: { 0: '1' } })).toBe(
+      true
     );
-    expect(store.get('dynamicKey${0}', null, { variables: [1] })).toBe(true);
+    expect(store.get('dynamicKey${0}', null, { variables: { 0: '1' } })).toBe(
+      true
+    );
+    expect(
+      store.set('dynamicKey${alias}', true, { variables: { alias: 'alias' } })
+    ).toBe(true);
+    expect(
+      store.get('dynamicKey${alias}', null, { variables: { alias: 'alias' } })
+    ).toBe(true);
+    expect(
+      store.set('dynamicKey${0}', 123 as any, { variables: { 0: '1' } })
+    ).toBe(false);
+    expect(store.get('dynamicKey${0}', null, { variables: { 0: '1' } })).toBe(
+      true
+    );
     expect(
       store.set('dynamicKey${alias}', 123 as any, {
-        variables: ['alias'],
+        variables: { alias: 'alias' },
       })
     ).toBe(false);
-  });
-
-  it('tryGet', () => {
-    expect(store.tryRemove('simpleKey')).toBeUndefined();
-    expect(store.tryGet('simpleKey')).toBeInstanceOf(Error);
-    expect(store.set('simpleKey', true)).toBe(true);
-    expect(store.tryGet('simpleKey')).toBe(true);
-  });
-
-  it('trySet value', () => {
-    expect(store.trySet('simpleKey', true)).toBeUndefined();
-    expect(store.get('simpleKey', null)).toBe(true);
-    expect(store.trySet('simpleKey', null)).toBeUndefined();
-    expect(store.get('simpleKey', true)).toBeNull();
-    expect(store.trySet('simpleKey', false)).toBeUndefined();
-    expect(store.get('simpleKey', true)).toBe(false);
-    expect(store.trySet('simpleKey', 123 as any)).toBeInstanceOf(Error);
-    expect(store.get('simpleKey', null)).toBe(false);
-    expect(store.trySet('simpleKey', {} as any)).toBeInstanceOf(Error);
-    expect(store.get('simpleKey', null)).toBe(false);
-    expect(
-      store.trySet('dynamicKey${0}', true, { variables: [1] })
-    ).toBeUndefined();
-    expect(store.get('dynamicKey${0}', null, { variables: [1] })).toBe(true);
-    expect(
-      store.trySet('dynamicKey${alias}', true, { variables: ['alias'] })
-    ).toBeUndefined();
-    expect(
-      store.get('dynamicKey${alias}', null, { variables: ['alias'] })
-    ).toBe(true);
-    expect(
-      store.trySet('dynamicKey${0}', 123 as any, { variables: [1] })
-    ).toBeInstanceOf(Error);
-    expect(store.get('dynamicKey${0}', null, { variables: [1] })).toBe(true);
-    expect(
-      store.trySet('dynamicKey${alias}', 123 as any, {
-        variables: ['alias'],
-      })
-    ).toBeInstanceOf(Error);
   });
 
   it('remove value', () => {
@@ -108,37 +77,14 @@ describe(' mode test', () => {
     expect(store.get('dynamicKey${alias}', null)).toBe(null);
 
     expect(
-      store.set('dynamicKey${alias}', true, { variables: ['alias'] })
+      store.set('dynamicKey${alias}', true, { variables: { alias: 'alias' } })
     ).toBe(true);
     expect(
-      store.get('dynamicKey${alias}', null, { variables: ['alias'] })
+      store.get('dynamicKey${alias}', null, { variables: { alias: 'alias' } })
     ).toBe(true);
-    store.remove('dynamicKey${alias}', ['alias']);
+    store.remove('dynamicKey${alias}', { variables: { alias: 'alias' } });
     expect(
-      store.get('dynamicKey${alias}', null, { variables: ['alias'] })
-    ).toBe(null);
-  });
-
-  it('tryRemove value', () => {
-    expect(store.set('simpleKey', true)).toBe(true);
-    expect(store.get('simpleKey', null)).toBe(true);
-    expect(store.tryRemove('simpleKey')).toBeUndefined();
-    expect(store.get('simpleKey', null)).toBe(null);
-
-    expect(store.set('dynamicKey${alias}', true)).toBe(true);
-    expect(store.get('dynamicKey${alias}', null)).toBe(true);
-    expect(store.tryRemove('dynamicKey${alias}')).toBeUndefined();
-    expect(store.get('dynamicKey${alias}', null)).toBe(null);
-
-    expect(
-      store.set('dynamicKey${alias}', true, { variables: ['alias'] })
-    ).toBe(true);
-    expect(
-      store.get('dynamicKey${alias}', null, { variables: ['alias'] })
-    ).toBe(true);
-    expect(store.tryRemove('dynamicKey${alias}', ['alias']));
-    expect(
-      store.get('dynamicKey${alias}', null, { variables: ['alias'] })
+      store.get('dynamicKey${alias}', null, { variables: { alias: 'alias' } })
     ).toBe(null);
   });
 
@@ -161,15 +107,15 @@ describe(' mode test', () => {
       () => {
         dynamicCalls += 1;
       },
-      { variables: ['alias'] }
+      { alias: 'alias' }
     );
     store.emit('simpleKey');
     store.emit('dynamicKey${alias}');
-    store.emit('dynamicKey${alias}', [123]);
-    store.emit('dynamicKey${alias}', ['alias']);
+    store.emit('dynamicKey${alias}', { alias: '123' });
+    store.emit('dynamicKey${alias}', { alias: 'alias' });
     store.emit('simpleKey');
     dynamicUnsub();
-    store.emit('dynamicKey${alias}', ['alias']);
+    store.emit('dynamicKey${alias}', { alias: 'alias' });
     expect(dynamicCalls).toBe(1);
   });
 
@@ -180,13 +126,76 @@ describe(' mode test', () => {
     });
     store.emit('simpleKey');
     store.emit('dynamicKey${alias}');
-    store.emit('dynamicKey${alias}', [123]);
-    store.emit('dynamicKey${alias}', ['alias']);
+    store.emit('dynamicKey${alias}', { alias: '123' });
+    store.emit('dynamicKey${alias}', { alias: 'alias' });
     store.untypedEmit('dynamicKeyalias');
     store.emit('simpleKey');
     dynamicUnsub();
-    store.emit('dynamicKey${alias}', ['alias']);
+    store.emit('dynamicKey${alias}', { alias: 'alias' });
     expect(dynamicCalls).toBe(2);
+  });
+
+  it('key format', () => {
+    const memStore = new SyncMemoryStorage();
+    const keyStore = buildSync(
+      {
+        validate: {
+          'dynamicKey${alias}': (v) =>
+            v === null || typeof v === 'boolean' ? v : new Error('invalid'),
+          'dynamicKey${0}': (v) =>
+            v === null || typeof v === 'boolean' ? v : new Error('invalid'),
+          'dynamicKey${}': (v) =>
+            v === null || typeof v === 'boolean' ? v : new Error('invalid'),
+          'simpleKey\\${}': (v) =>
+            v === null || typeof v === 'boolean' ? v : new Error('invalid'),
+          'simpleKey${alias}test': (v) =>
+            v === null || typeof v === 'boolean' ? v : new Error('invalid'),
+          'simpleKey${alias}tes${alias}t': (v) =>
+            v === null || typeof v === 'boolean' ? v : new Error('invalid'),
+          '${0}simpleKey${alias}tes${alias}t': (v) =>
+            v === null || typeof v === 'boolean' ? v : new Error('invalid'),
+        },
+      },
+      memStore,
+      { validateOnSet: true, validateOnGet: true }
+    );
+    expect(
+      keyStore.set('dynamicKey${0}', false, { variables: { 0: '1' } })
+    ).toBe(true);
+    expect(memStore.state[`dynamicKey${1}`]).toBe(false);
+
+    expect(
+      keyStore.set('dynamicKey${0}', true, { variables: { 0: '1' } })
+    ).toBe(true);
+    expect(memStore.state[`dynamicKey${1}`]).toBe(true);
+
+    expect(
+      keyStore.set('dynamicKey${}', false, { variables: { '': '1' } })
+    ).toBe(true);
+    expect(memStore.state['dynamicKey${}']).toBe(false);
+
+    expect(keyStore.set('simpleKey\\${}', false)).toBe(true);
+    expect(memStore.state['simpleKey\\${}']).toBe(false);
+
+    expect(
+      keyStore.set('simpleKey${alias}test', false, {
+        variables: { alias: 'alias' },
+      })
+    ).toBe(true);
+    expect(memStore.state[`simpleKey${'alias'}test`]).toBe(false);
+
+    expect(
+      keyStore.set('simpleKey${alias}tes${alias}t', false, {
+        variables: { alias: 'alias' },
+      })
+    ).toBe(true);
+    expect(memStore.state[`simpleKey${'alias'}tes${'alias'}t`]).toBe(false);
+
+    expect(
+      keyStore.set('${0}simpleKey${alias}tes${alias}t', false, {
+        variables: { alias: 'alias', 0: '1' },
+      })
+    ).toBe(true);
   });
 
   describe('buildKeyApi', () => {
@@ -205,13 +214,16 @@ describe(' mode test', () => {
             v === null || typeof v === 'boolean' ? v : new Error('invalid'),
         },
       },
-      new MemoryStorage()
+      new SyncMemoryStorage(),
+      { validateOnSet: true, validateOnGet: true }
     );
     const simpleKeyApi = newStore.buildKeyApi('simpleKey');
-    const dynamicKeyAliasApi = newStore.buildKeyApi('dynamicKey${alias}', [
-      'alias',
-    ]);
-    const dynamicKey1Api = newStore.buildKeyApi('dynamicKey${0}', [1]);
+    const dynamicKeyAliasApi = newStore.buildKeyApi('dynamicKey${alias}', {
+      variables: { alias: 'alias' },
+    });
+    const dynamicKey1Api = newStore.buildKeyApi('dynamicKey${0}', {
+      variables: { 0: '1' },
+    });
     const dynamicKeyUndefinedApi = newStore.buildKeyApi('dynamicKey${0}');
 
     it('get default value', () => {
@@ -240,33 +252,6 @@ describe(' mode test', () => {
       expect(dynamicKeyAliasApi.set(123 as any)).toBe(false);
     });
 
-    it('tryGet', () => {
-      expect(simpleKeyApi.tryRemove()).toBeUndefined();
-      expect(simpleKeyApi.tryGet()).toBeInstanceOf(Error);
-      expect(simpleKeyApi.set(true)).toBe(true);
-      expect(simpleKeyApi.tryGet()).toBe(true);
-    });
-
-    it('trySet value', () => {
-      expect(simpleKeyApi.trySet(true)).toBeUndefined();
-      expect(simpleKeyApi.get(null)).toBe(true);
-      expect(simpleKeyApi.trySet(null)).toBeUndefined();
-      expect(simpleKeyApi.get(true)).toBeNull();
-      expect(simpleKeyApi.trySet(false)).toBeUndefined();
-      expect(simpleKeyApi.get(true)).toBe(false);
-      expect(simpleKeyApi.trySet(123 as any)).toBeInstanceOf(Error);
-      expect(simpleKeyApi.get(null)).toBe(false);
-      expect(simpleKeyApi.trySet({} as any)).toBeInstanceOf(Error);
-      expect(simpleKeyApi.get(null)).toBe(false);
-      expect(dynamicKey1Api.trySet(true)).toBeUndefined();
-      expect(dynamicKey1Api.get(null)).toBe(true);
-      expect(dynamicKeyAliasApi.trySet(true)).toBeUndefined();
-      expect(dynamicKeyAliasApi.get(null)).toBe(true);
-      expect(dynamicKey1Api.trySet(123 as any)).toBeInstanceOf(Error);
-      expect(dynamicKey1Api.get(null)).toBe(true);
-      expect(dynamicKeyAliasApi.trySet(123 as any)).toBeInstanceOf(Error);
-    });
-
     it('remove value', () => {
       expect(simpleKeyApi.set(true)).toBe(true);
       expect(simpleKeyApi.get(null)).toBe(true);
@@ -281,23 +266,6 @@ describe(' mode test', () => {
       expect(dynamicKeyAliasApi.set(true)).toBe(true);
       expect(dynamicKeyAliasApi.get(null)).toBe(true);
       dynamicKeyAliasApi.remove();
-      expect(dynamicKeyAliasApi.get(null)).toBe(null);
-    });
-
-    it('tryRemove value', () => {
-      expect(simpleKeyApi.set(true)).toBe(true);
-      expect(simpleKeyApi.get(null)).toBe(true);
-      expect(simpleKeyApi.tryRemove()).toBeUndefined();
-      expect(simpleKeyApi.get(null)).toBe(null);
-
-      expect(dynamicKeyUndefinedApi.set(true)).toBe(true);
-      expect(dynamicKeyUndefinedApi.get(null)).toBe(true);
-      expect(dynamicKeyUndefinedApi.tryRemove()).toBeUndefined();
-      expect(dynamicKeyUndefinedApi.get(null)).toBe(null);
-
-      expect(dynamicKeyAliasApi.set(true)).toBe(true);
-      expect(dynamicKeyAliasApi.get(null)).toBe(true);
-      expect(dynamicKeyAliasApi.tryRemove()).toBeUndefined();
       expect(dynamicKeyAliasApi.get(null)).toBe(null);
     });
 

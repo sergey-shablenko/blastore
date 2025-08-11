@@ -1,4 +1,7 @@
-export class MemoryStorage {
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.SyncMemoryStorage = void 0;
+class SyncMemoryStorage {
     constructor() {
         this.state = {};
     }
@@ -12,3 +15,4 @@ export class MemoryStorage {
         delete this.state[key];
     }
 }
+exports.SyncMemoryStorage = SyncMemoryStorage;

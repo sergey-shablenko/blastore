@@ -1,6 +1,6 @@
 {
   "name": "blastore",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "Blazing-fast, type-safe key–value storage wrapper with minimal overhead.",
   "type": "module",
   "license": "MIT",

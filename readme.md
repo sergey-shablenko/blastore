@@ -26,8 +26,8 @@ const value = localStorage.getItem('someString') ?? 'defaultValue';
 import { format } from 'date-fns';
 
 const someISODateString =
-  localStorage.getItem('someISODateString') ?? new Date().toISOString(); // nobody guarantees someISODateString is a valid ISO string
-format(someISODateString, 'dd-MM'); // can potentially crash if you read invalid string from localStorage.getItem('someISODateString')
+  localStorage.getItem('someISODateString') ?? new Date().toISOString(); // valid ISO string is not guaranteed
+format(someISODateString, 'dd-MM'); // can potentially crash
 ```
 
 ```ts
@@ -161,15 +161,15 @@ blastore.set('myShape', { key: 'value' });
 
 ## Feature comparison
 
-| Feature            | Blastore               | Zustand                  | Redux Toolkit            |
-| ------------------ | ---------------------- | ------------------------ | ------------------------ |
+| Feature            | Blastore              | Zustand                  | Redux Toolkit            |
+|--------------------|-----------------------|--------------------------|--------------------------|
 | Type Safety        | ✅ Static + runtime    | Manual (TypeScript only) | Manual (TypeScript only) |
 | Runtime Validation | ✅ Built-in            | Manual                   | Manual                   |
 | Async Storage      | ✅ Built-in            | Plugin/manual            | Manual                   |
 | Dynamic Keys       | ✅ Typed + precompiled | Manual patterns          | Manual patterns          |
-| Pub/Sub            | ✅ Native              | ✅ (listeners)           | ✅ (store.subscribe)     |
-| Immutability       | Optional (adapter)     | Optional                 | Default (Immer)          |
-| Backends           | Pluggable              | In-memory only           | In-memory only           |
+| Pub/Sub            | ✅ Native              | ✅ (listeners)            | ✅ (store.subscribe)      |
+| Immutability       | Optional (adapter)    | Optional                 | Default (Immer)          |
+| Backends           | Pluggable             | In-memory only           | In-memory only           |
 
 ---
 
@@ -445,7 +445,8 @@ console.error(out.error);
 
 **Blastore** supports basic pub/sub.
 There are two ways of emitting events.
-First one is where you emit using a key template, this way should be preferred as this method does not require key look
+
+First is when you emit using a key template, this way should be preferred as this method does not require key look
 up, is faster and more efficient
 
 ```ts
@@ -460,9 +461,10 @@ const asyncEmitted = await asyncBlastore.emit('key{id}', 'action', value, {
 }); //async
 ```
 
-Second is where you emit using raw key from the storage. This method will attempt to match raw key to one of the
-templates registered in **blastore** and if matched, will emit to subscribers of that template.
-This method also supports passing a raw value which can be deserialized before sending to subscribers.
+Second is when you emit using raw key from the storage. This method will attempt to match raw key to one of the
+templates registered in **blastore** and if matched, will emit to subscribers of that template. It also supports passing
+a raw value which can be deserialized before sending to subscribers.
+
 Useful when you want to add support for cross tab localStorage changes or manually trigger changes when storage of your
 choice is changed outside **blastore** scope, or anything like that
 
@@ -484,11 +486,13 @@ const asyncEmitted = await asyncBlastore.untypedEmit(
 ); //async
 ```
 
-Same goes for subscriptions.
-You can either subscribe using key template or raw key.
-In this case untypedSubscribe is more performant, but you will not have static typing to easily track which keys are
+Same goes for subscriptions. You can either subscribe using key template or raw key.
+
+In this case `.untypedSubscribe()` is more performant, but you will not have static typing to easily track which keys
+are
 used in the app.
-From DX perspective is if better to use typed subscribe (`.subscribe()`).
+
+From DX perspective it is better to use typed `.subscribe()`.
 
 ```ts
 const unsub = blastore.subscribe(
@@ -616,7 +620,7 @@ Refer benchmarks sections for details on overhead
 <summary>All results</summary>
 
 | Library / Mode                                                                     | Time (`ns/op`) |
-| ---------------------------------------------------------------------------------- | -------------: |
+|------------------------------------------------------------------------------------|---------------:|
 | raw object - simple key                                                            |          19.29 |
 | raw Map - simple key                                                               |          24.95 |
 | zustand - simple key                                                               |          22.55 |
@@ -707,7 +711,7 @@ Refer benchmarks sections for details on overhead
 <summary>Simple Keys (Mutable)</summary>
 
 | Library / Mode                                        | Time (`ns/op`) |
-| ----------------------------------------------------- | -------------: |
+|-------------------------------------------------------|---------------:|
 | raw object - simple key                               |          19.29 |
 | zustand - simple key                                  |          22.55 |
 | raw Map - simple key                                  |          24.95 |
@@ -736,7 +740,7 @@ Refer benchmarks sections for details on overhead
 <summary>Dynamic Keys (Mutable)</summary>
 
 | Library / Mode                                                               | Time (`ns/op`) |
-| ---------------------------------------------------------------------------- | -------------: |
+|------------------------------------------------------------------------------|---------------:|
 | blastore - precompiled key                                                   |          46.16 |
 | raw Map - dynamic key                                                        |          66.18 |
 | raw object - dynamic key                                                     |          71.36 |
@@ -770,7 +774,7 @@ Refer benchmarks sections for details on overhead
 <summary>Pub/sub (Mutable)</summary>
 
 | Library / Mode                                                  | Time (`ns/op`) |
-| --------------------------------------------------------------- | -------------: |
+|-----------------------------------------------------------------|---------------:|
 | zustand - simple key; pub/sub                                   |          22.39 |
 | blastore - simple key; pub/sub                                  |          41.17 |
 | raw object - simple key; pub/sub                                |          45.33 |
@@ -808,7 +812,7 @@ Refer benchmarks sections for details on overhead
 <summary>Pub/sub (Immutable)</summary>
 
 | Library / Mode                                                                     | Time (`ns/op`) |
-| ---------------------------------------------------------------------------------- | -------------: |
+|------------------------------------------------------------------------------------|---------------:|
 | raw object - simple key; immutable; pub/sub                                        |          53.92 |
 | blastore - simple key; immutable adapter                                           |          84.44 |
 | blastore - simple key; immutable adapter; pub/sub                                  |          94.93 |
@@ -856,8 +860,7 @@ Refer benchmarks sections for details on overhead
 - **zustand**: fastest mainstream library, especially for simple keys + pub/sub.
 - **blastore**: ~2–5× slower than raw, but adds type safety, validation, precompiled keys, pub/sub, and backend
   integration.
-- Standard schema blastore: 2–3× slower than custom validators, still orders of magnitude faster than **MobX**/**Jotai
-  **/**Valtio**/**Redux Toolkit**.
+- Standard schema blastore: 2–3× slower than custom validators, still orders of magnitude faster than **MobX**/**Jotai**/**Valtio**/**Redux Toolkit**.
 - Immutable mode:
   - **blastore**: stays within 2–3k ns.
   - **zustand**: 100k+ ns.

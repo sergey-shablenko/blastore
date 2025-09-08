@@ -1,28 +1,34 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.useSyncStore = useSyncStore;
+exports.useStandardStore = useStandardStore;
 const react_1 = require("react");
-function useSyncStore(store, key, defaultValue, options) {
+function useStandardStore(store, key, defaultValue, options) {
     const out = (0, react_1.useRef)({ error: undefined }).current;
     const keyApi = (0, react_1.useMemo)(() => store.buildKeyApi(key, {
         ...(options ?? {}),
         out,
     }), [key, options]);
-    const initialValue = (0, react_1.useMemo)(() => keyApi.get(defaultValue), [keyApi]);
-    const [value, setValue] = (0, react_1.useState)(initialValue);
+    const [value, setValue] = (0, react_1.useState)(defaultValue);
+    const [isInitialised, setIsInitialised] = (0, react_1.useState)(false);
     (0, react_1.useEffect)(() => {
-        setValue(initialValue);
+        Promise.resolve(keyApi.get(defaultValue)).then((v) => {
+            setValue(v);
+            setIsInitialised(true);
+        });
         return keyApi.subscribe((e) => {
             if (e.action === 'remove') {
                 setValue(defaultValue);
+                setIsInitialised(true);
             }
             if (e.action === 'set') {
                 setValue(e.data);
+                setIsInitialised(true);
             }
             // ignore custom actions
         });
     }, [keyApi]);
     return {
+        isInitialised,
         value,
         error: out.error,
         set: keyApi.set,

@@ -1,15 +1,25 @@
-import { AsyncMemoryStorage } from './async-memory-storage';
-import { getFullKey, parseKey } from './util';
+import { buildRegexForKeyTemplate, createKeyBuilder, parseKey } from './util';
 const subscriptions = new WeakMap();
-const defaultStore = new AsyncMemoryStorage();
-export const buildAsync = ((schema, store = defaultStore, defaultOptions) => {
-    const keys = Object.freeze(Object.keys(schema.validate).reduce((obj, key) => {
+export const buildAsync = ((schema) => {
+    const store = schema.store;
+    const validate = Object.freeze({ ...schema.validate });
+    const defaultSerialize = schema.defaultSerialize;
+    const defaultDeserialize = schema.defaultDeserialize;
+    const serialize = Object.freeze({ ...schema.serialize });
+    const deserialize = Object.freeze({ ...schema.deserialize });
+    const defaultValidateOnGet = schema.validateOnGet === true;
+    const defaultValidateOnSet = schema.validateOnSet === true;
+    const defaultValidateOnEmit = schema.validateOnEmit === true;
+    const keys = Object.keys(validate).map((key) => {
         const parts = parseKey(key);
+        const regex = buildRegexForKeyTemplate(parts);
         if (parts.some(([, variable]) => variable)) {
-            obj[key] = new Function('vars', `return ${parts.map(([s, i]) => [`'${s}'`, i ? `vars${/^\d+$/i.test(i) || i === 'true' || i === 'false' ? `[${i}]` : /^([^0-9a-z]+|)$/i.test(i) ? `['${i}']` : `.${i}`}` : null].filter(Boolean).join(' + ')).join(' + ')};`);
+            const builder = new Function('vars', `return ${parts.map(([s, i]) => [`'${s}'`, i ? `vars${/^\d+$/i.test(i) || i === 'true' || i === 'false' ? `[${i}]` : /^([^0-9a-z]+|)$/i.test(i) ? `['${i}']` : `.${i}`}` : null].filter(Boolean).join(' + ')).join(' + ')};`);
+            return { key, parts, regex, builder };
         }
-        return obj;
-    }, {}));
+        return { key, parts, regex };
+    });
+    const getFullKey = createKeyBuilder(keys);
     const untypedSubscribe = (key, trigger) => {
         let storeSubscriptions = subscriptions.get(store);
         if (!storeSubscriptions) {
@@ -34,42 +44,121 @@ export const buildAsync = ((schema, store = defaultStore, defaultOptions) => {
     };
     const subscribe = (key, trigger, options) => {
         const fullKey = options?.variables
-            ? getFullKey(keys, key, options.variables)
+            ? getFullKey(key, options.variables)
             : key;
         return untypedSubscribe(fullKey, trigger);
     };
-    const untypedEmit = (key) => {
+    const _untypedEmit = (key, action, data) => {
         const storeSubs = subscriptions.get(store);
         const subs = storeSubs && storeSubs.get(key);
         if (subs && subs.length) {
+            const payload = { action, data };
             for (let i = 0; i < subs.length; i++) {
-                subs[i]();
+                subs[i](payload);
             }
         }
     };
-    const emit = (key, variables) => {
-        const fullKey = variables ? getFullKey(keys, key, variables) : key;
-        untypedEmit(fullKey);
-    };
-    const get = async (key, defaultValue, options) => {
-        const deserializer = typeof schema.deserialize?.[key] === 'function'
-            ? schema.deserialize[key]
-            : typeof schema.defaultDeserialize === 'function'
-                ? schema.defaultDeserialize
-                : undefined;
+    const untypedEmit = (async (key, action, data, options) => {
+        let out = undefined;
+        if (options) {
+            if (options.out && typeof options.out === 'object') {
+                out = options.out;
+            }
+        }
+        try {
+            for (let i = 0; i < keys.length; i++) {
+                const parsedKey = keys[i];
+                if (new RegExp(parsedKey.regex).test(key)) {
+                    let dataToEmit = data;
+                    if (options?.deserialize) {
+                        const deserializer = typeof deserialize?.[key] ===
+                            'function'
+                            ? deserialize[key]
+                            : typeof defaultDeserialize === 'function'
+                                ? defaultDeserialize
+                                : undefined;
+                        if (deserializer) {
+                            dataToEmit = await deserializer(data);
+                        }
+                    }
+                    if (options?.validate) {
+                        dataToEmit = await validate[parsedKey.key](dataToEmit);
+                    }
+                    if (dataToEmit instanceof Error) {
+                        if (out) {
+                            out.error = dataToEmit;
+                        }
+                        return false;
+                    }
+                    _untypedEmit(key, action, dataToEmit);
+                    return true;
+                }
+            }
+        }
+        catch (e) {
+            if (out) {
+                out.error = e instanceof Error ? e : new Error(String(e));
+            }
+        }
+        return false;
+    });
+    const emit = (async (key, action, data, options) => {
         let fullKey = key;
         let out = undefined;
-        let validate = defaultOptions?.validateOnGet === true;
-        const validator = schema.validate[key];
+        let validateOnEmit = defaultValidateOnEmit;
+        const validator = validate[key];
         if (options) {
             if (options.variables) {
-                fullKey = getFullKey(keys, key, options.variables);
+                fullKey = getFullKey(key, options.variables);
             }
             if (options.out && typeof options.out === 'object') {
                 out = options.out;
             }
             if (typeof options.validate === 'boolean') {
-                validate = options.validate;
+                validateOnEmit = options.validate;
+            }
+        }
+        if (validateOnEmit) {
+            try {
+                const value = await validator(data);
+                if (value instanceof Error) {
+                    if (out) {
+                        out.error = value;
+                    }
+                    return false;
+                }
+                _untypedEmit(fullKey, action, value);
+                return true;
+            }
+            catch (e) {
+                if (out) {
+                    out.error = e instanceof Error ? e : new Error(String(e));
+                }
+                return false;
+            }
+        }
+        _untypedEmit(fullKey, action, data);
+        return true;
+    });
+    const get = async (key, defaultValue, options) => {
+        const deserializer = typeof deserialize?.[key] === 'function'
+            ? deserialize[key]
+            : typeof defaultDeserialize === 'function'
+                ? defaultDeserialize
+                : undefined;
+        let fullKey = key;
+        let out = undefined;
+        let validateOnGet = defaultValidateOnGet;
+        const validator = validate[key];
+        if (options) {
+            if (options.variables) {
+                fullKey = getFullKey(key, options.variables);
+            }
+            if (options.out && typeof options.out === 'object') {
+                out = options.out;
+            }
+            if (typeof options.validate === 'boolean') {
+                validateOnGet = options.validate;
             }
         }
         try {
@@ -77,7 +166,7 @@ export const buildAsync = ((schema, store = defaultStore, defaultOptions) => {
             if (deserializer) {
                 value = await deserializer(value);
             }
-            if (validate) {
+            if (validateOnGet) {
                 value = await validator(value);
                 if (value instanceof Error) {
                     if (out) {
@@ -96,29 +185,29 @@ export const buildAsync = ((schema, store = defaultStore, defaultOptions) => {
         }
     };
     const set = async (key, value, options) => {
-        const serializer = typeof schema.serialize?.[key] === 'function'
-            ? schema.serialize[key]
-            : typeof schema.defaultSerialize === 'function'
-                ? schema.defaultSerialize
+        const serializer = typeof serialize?.[key] === 'function'
+            ? serialize[key]
+            : typeof defaultSerialize === 'function'
+                ? defaultSerialize
                 : undefined;
         let fullKey = key;
         let out = undefined;
-        let validate = defaultOptions?.validateOnSet === true;
-        const validator = schema.validate[key];
+        let validateOnSet = defaultValidateOnSet;
+        const validator = validate[key];
         if (options) {
             if (options.variables) {
-                fullKey = getFullKey(keys, key, options.variables);
+                fullKey = getFullKey(key, options.variables);
             }
             if (options.out && typeof options.out === 'object') {
                 out = options.out;
             }
             if (typeof options.validate === 'boolean') {
-                validate = options.validate;
+                validateOnSet = options.validate;
             }
         }
         try {
             let insertValue = value;
-            if (validate) {
+            if (validateOnSet) {
                 insertValue = await validator(insertValue);
                 if (insertValue instanceof Error) {
                     if (out) {
@@ -131,7 +220,7 @@ export const buildAsync = ((schema, store = defaultStore, defaultOptions) => {
                 insertValue = await serializer(insertValue);
             }
             await store.setItem(fullKey, insertValue);
-            untypedEmit(fullKey);
+            _untypedEmit(fullKey, 'set', insertValue);
             return true;
         }
         catch (e) {
@@ -146,7 +235,7 @@ export const buildAsync = ((schema, store = defaultStore, defaultOptions) => {
         let out = undefined;
         if (options) {
             if (options.variables) {
-                fullKey = getFullKey(keys, key, options.variables);
+                fullKey = getFullKey(key, options.variables);
             }
             if (options.out && typeof options.out === 'object') {
                 out = options.out;
@@ -154,7 +243,7 @@ export const buildAsync = ((schema, store = defaultStore, defaultOptions) => {
         }
         try {
             await store.removeItem(fullKey);
-            untypedEmit(fullKey);
+            _untypedEmit(fullKey, 'remove');
             return true;
         }
         catch (e) {
@@ -165,24 +254,25 @@ export const buildAsync = ((schema, store = defaultStore, defaultOptions) => {
         }
     };
     const buildKeyApi = (key, options) => {
-        const deserializer = typeof schema.deserialize?.[key] === 'function'
-            ? schema.deserialize[key]
-            : typeof schema.defaultDeserialize === 'function'
-                ? schema.defaultDeserialize
+        const deserializer = typeof deserialize?.[key] === 'function'
+            ? deserialize[key]
+            : typeof defaultDeserialize === 'function'
+                ? defaultDeserialize
                 : undefined;
-        const serializer = typeof schema.serialize?.[key] === 'function'
-            ? schema.serialize[key]
-            : typeof schema.defaultSerialize === 'function'
-                ? schema.defaultSerialize
+        const serializer = typeof serialize?.[key] === 'function'
+            ? serialize[key]
+            : typeof defaultSerialize === 'function'
+                ? defaultSerialize
                 : undefined;
         let fullKey = key;
         let out = undefined;
-        let validateOnSet = defaultOptions?.validateOnSet === true;
-        let validateOnGet = defaultOptions?.validateOnGet === true;
-        const validator = schema.validate[key];
+        let validateOnSet = defaultValidateOnSet;
+        let validateOnGet = defaultValidateOnGet;
+        let validateOnEmit = defaultValidateOnEmit;
+        const validator = validate[key];
         if (options) {
             if (options.variables) {
-                fullKey = getFullKey(keys, key, options.variables);
+                fullKey = getFullKey(key, options.variables);
             }
             if (options.out && typeof options.out === 'object') {
                 out = options.out;
@@ -193,10 +283,33 @@ export const buildAsync = ((schema, store = defaultStore, defaultOptions) => {
             if (typeof options.validateOnGet === 'boolean') {
                 validateOnGet = options.validateOnGet;
             }
+            if (typeof options.validateOnEmit === 'boolean') {
+                validateOnEmit = options.validateOnEmit;
+            }
         }
-        const _emit = () => {
-            untypedEmit(fullKey);
-        };
+        const _emit = (async (action, data) => {
+            if (validateOnEmit) {
+                try {
+                    const value = action === 'remove' ? undefined : await validator(data);
+                    if (value instanceof Error) {
+                        if (out) {
+                            out.error = value;
+                        }
+                        return false;
+                    }
+                    _untypedEmit(fullKey, action, value);
+                    return true;
+                }
+                catch (e) {
+                    if (out) {
+                        out.error = e instanceof Error ? e : new Error(String(e));
+                    }
+                    return false;
+                }
+            }
+            _untypedEmit(fullKey, action, data);
+            return true;
+        });
         const _get = async (defaultValue) => {
             try {
                 let value = await store.getItem(fullKey);
@@ -237,7 +350,7 @@ export const buildAsync = ((schema, store = defaultStore, defaultOptions) => {
                     insertValue = await serializer(insertValue);
                 }
                 await store.setItem(fullKey, insertValue);
-                untypedEmit(fullKey);
+                _untypedEmit(fullKey, 'set', insertValue);
                 return true;
             }
             catch (e) {
@@ -250,7 +363,7 @@ export const buildAsync = ((schema, store = defaultStore, defaultOptions) => {
         const _remove = async () => {
             try {
                 await store.removeItem(fullKey);
-                untypedEmit(fullKey);
+                _untypedEmit(fullKey, 'remove');
                 return true;
             }
             catch (e) {
@@ -271,7 +384,7 @@ export const buildAsync = ((schema, store = defaultStore, defaultOptions) => {
             emit: _emit,
         });
     };
-    return {
+    return Object.freeze({
         schema,
         get,
         set,
@@ -281,5 +394,5 @@ export const buildAsync = ((schema, store = defaultStore, defaultOptions) => {
         emit,
         untypedEmit,
         buildKeyApi,
-    };
+    });
 });

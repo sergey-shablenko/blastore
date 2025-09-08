@@ -12,9 +12,16 @@ function useAsyncStore(store, key, defaultValue, options) {
             setValue(v);
             setIsInitialised(true);
         });
-        return keyApi.subscribe(async () => {
-            setValue(await keyApi.get(defaultValue));
-            setIsInitialised(true);
+        return keyApi.subscribe((e) => {
+            if (e.action === 'remove') {
+                setValue(defaultValue);
+                setIsInitialised(true);
+            }
+            if (e.action === 'set') {
+                setValue(e.data);
+                setIsInitialised(true);
+            }
+            // ignore custom actions
         });
     }, [keyApi]);
     return {

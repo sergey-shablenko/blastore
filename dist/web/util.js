@@ -1,3 +1,10 @@
+const META = /[.*+?^${}()|[\]\\]/g;
+const esc = (s) => s.replace(META, '\\$&');
+export function buildRegexForKeyTemplate(parts) {
+    return `^${parts
+        .map(([literal, variable]) => variable ? `${esc(literal)}(\.+)` : esc(literal))
+        .join('')}$`;
+}
 export function parseKey(tmpl) {
     const parts = [];
     let i = 0;
@@ -24,19 +31,28 @@ export function parseKey(tmpl) {
     }
     return parts;
 }
-let lastKey;
-let lastVars;
-let lastCompiled;
-export function getFullKey(compiledKeys, key, variables) {
-    const template = compiledKeys[key];
-    if (template === undefined) {
-        return key;
-    }
-    if (lastKey === key && lastVars === variables) {
+export function createKeyBuilder(compiledKeys) {
+    let lastKey;
+    let lastVars;
+    let lastCompiled;
+    let i = 0;
+    let tmpKey;
+    return function getFullKey(key, variables) {
+        if (lastKey === key && lastVars === variables) {
+            return lastCompiled;
+        }
+        for (i = 0; i < compiledKeys.length; i++) {
+            tmpKey = compiledKeys[i];
+            if (tmpKey.key === key && tmpKey.builder) {
+                break;
+            }
+            if (i === compiledKeys.length - 1) {
+                return key;
+            }
+        }
+        lastKey = key;
+        lastVars = variables;
+        lastCompiled = tmpKey.builder(variables || {}) || key;
         return lastCompiled;
-    }
-    lastKey = key;
-    lastVars = variables;
-    lastCompiled = template(variables || {}) || key;
-    return lastCompiled;
+    };
 }

@@ -1,5 +1,16 @@
 import { CompiledKeys, KeyVariable } from './types';
 
+const META = /[.*+?^${}()|[\]\\]/g;
+const esc = (s: string) => s.replace(META, '\\$&');
+
+export function buildRegexForKeyTemplate(parts: [string, string][]) {
+  return `^${parts
+    .map(([literal, variable]) =>
+      variable ? `${esc(literal)}(\.+)` : esc(literal)
+    )
+    .join('')}$`;
+}
+
 export function parseKey(tmpl: string): [string, string][] {
   const parts: [string, string][] = [];
   let i = 0;
@@ -27,24 +38,32 @@ export function parseKey(tmpl: string): [string, string][] {
   return parts;
 }
 
-let lastKey: string | undefined;
-let lastVars: Record<string, KeyVariable> | undefined;
-let lastCompiled: string | undefined;
+export function createKeyBuilder(compiledKeys: CompiledKeys) {
+  let lastKey: string | undefined;
+  let lastVars: Record<string, KeyVariable> | undefined;
+  let lastCompiled: string | undefined;
+  let i = 0;
+  let tmpKey: CompiledKeys[0];
 
-export function getFullKey(
-  compiledKeys: CompiledKeys,
-  key: string,
-  variables: Record<string, KeyVariable>
-) {
-  const template = compiledKeys[key];
-  if (template === undefined) {
-    return key;
-  }
-  if (lastKey === key && lastVars === variables) {
+  return function getFullKey(
+    key: string,
+    variables: Record<string, KeyVariable>
+  ) {
+    if (lastKey === key && lastVars === variables) {
+      return lastCompiled!;
+    }
+    for (i = 0; i < compiledKeys.length; i++) {
+      tmpKey = compiledKeys[i];
+      if (tmpKey.key === key && tmpKey.builder) {
+        break;
+      }
+      if (i === compiledKeys.length - 1) {
+        return key;
+      }
+    }
+    lastKey = key;
+    lastVars = variables;
+    lastCompiled = tmpKey.builder!(variables || {}) || key;
     return lastCompiled!;
-  }
-  lastKey = key;
-  lastVars = variables;
-  lastCompiled = template(variables || {}) || key;
-  return lastCompiled!;
+  };
 }

@@ -1,28 +1,40 @@
 import { describe, expect, it } from 'vitest';
-import { buildSync } from '../src/sync';
+import { buildStandard } from '../src/standard';
 import { SyncMemoryStorage } from '../src/sync-memory-storage';
+import { z } from 'zod';
 
 describe('sync mode test', () => {
   const testMemStore = new SyncMemoryStorage();
-  const store = buildSync({
-    store: testMemStore,
+  const store = buildStandard({
     validate: {
-      simpleKey: (v) =>
-        v === null || typeof v === 'boolean' ? v : new Error('invalid'),
-      'dynamicKey${alias}': (v) =>
-        v === null || typeof v === 'boolean' ? v : new Error('invalid'),
-      'dynamicKey${0}': (v) =>
-        v === null || typeof v === 'boolean' ? v : new Error('invalid'),
-      'dynamicKey${}': (v) =>
-        v === null || typeof v === 'boolean' ? v : new Error('invalid'),
-      'simpleKey\${}': (v) =>
-        v === null || typeof v === 'boolean' ? v : new Error('invalid'),
+      simpleKey: z.union([z.null(), z.boolean()]),
+      'dynamicKey${alias}': z.union([z.null(), z.boolean()]),
+      'dynamicKey${0}': z.union([z.null(), z.boolean()]),
+      'dynamicKey${}': z.union([z.null(), z.boolean()]),
+      'simpleKey\${}': z.union([z.null(), z.boolean()]),
     },
+    keyMode: {
+      simpleKey: 'sync',
+      'dynamicKey${alias}': 'sync',
+      'dynamicKey${0}': 'sync',
+      'dynamicKey${}': 'sync',
+      'simpleKey\${}': 'sync',
+    },
+    serialize: {
+      simpleKey: (v) => v,
+      'dynamicKey${0}': (v) => v,
+    },
+    deserialize: {
+      simpleKey: (v) => v as boolean,
+      'dynamicKey${0}': (v) => v as boolean,
+    },
+    store: testMemStore,
     validateOnGet: true,
     validateOnSet: true,
   });
 
   it('get default value', () => {
+    const res = store.get('simpleKey', null);
     expect(store.get('simpleKey', null)).toBeNull();
     expect(store.get('simpleKey', true)).toBe(true);
     expect(store.get('simpleKey', false)).toBe(false);
@@ -124,7 +136,7 @@ describe('sync mode test', () => {
     expect(dynamicCalls).toBe(1);
   });
 
-  it('untypedSubscribe', () => {
+  it('untypedSubscribe', async () => {
     let dynamicCalls = 0;
     const dynamicUnsub = store.untypedSubscribe('dynamicKeyalias', () => {
       dynamicCalls += 1;
@@ -137,7 +149,7 @@ describe('sync mode test', () => {
     store.emit('dynamicKey${alias}', 'set', false, {
       variables: { alias: 'alias' },
     });
-    store.untypedEmit('dynamicKeyalias', 'set', false);
+    await store.untypedEmit('dynamicKeyalias', 'set', false);
     store.emit('simpleKey', 'set', false);
     dynamicUnsub();
     store.emit('dynamicKey${alias}', 'set', false, {
@@ -148,23 +160,25 @@ describe('sync mode test', () => {
 
   it('key format', () => {
     const memStore = new SyncMemoryStorage();
-    const keyStore = buildSync({
+    const keyStore = buildStandard({
       store: memStore,
       validate: {
-        'dynamicKey${alias}': (v) =>
-          v === null || typeof v === 'boolean' ? v : new Error('invalid'),
-        'dynamicKey${0}': (v) =>
-          v === null || typeof v === 'boolean' ? v : new Error('invalid'),
-        'dynamicKey${}': (v) =>
-          v === null || typeof v === 'boolean' ? v : new Error('invalid'),
-        'simpleKey\\${}': (v) =>
-          v === null || typeof v === 'boolean' ? v : new Error('invalid'),
-        'simpleKey${alias}test': (v) =>
-          v === null || typeof v === 'boolean' ? v : new Error('invalid'),
-        'simpleKey${alias}tes${alias}t': (v) =>
-          v === null || typeof v === 'boolean' ? v : new Error('invalid'),
-        '${0}simpleKey${alias}tes${alias}t': (v) =>
-          v === null || typeof v === 'boolean' ? v : new Error('invalid'),
+        'dynamicKey${alias}': z.union([z.null(), z.boolean()]),
+        'dynamicKey${0}': z.union([z.null(), z.boolean()]),
+        'dynamicKey${}': z.union([z.null(), z.boolean()]),
+        'simpleKey\\${}': z.union([z.null(), z.boolean()]),
+        'simpleKey${alias}test': z.union([z.null(), z.boolean()]),
+        'simpleKey${alias}tes${alias}t': z.union([z.null(), z.boolean()]),
+        '${0}simpleKey${alias}tes${alias}t': z.union([z.null(), z.boolean()]),
+      },
+      keyMode: {
+        'dynamicKey${alias}': 'sync',
+        'dynamicKey${0}': 'sync',
+        'dynamicKey${}': 'sync',
+        'simpleKey\\${}': 'sync',
+        'simpleKey${alias}test': 'sync',
+        'simpleKey${alias}tes${alias}t': 'sync',
+        '${0}simpleKey${alias}tes${alias}t': 'sync',
       },
       validateOnSet: true,
       validateOnGet: true,
@@ -209,19 +223,21 @@ describe('sync mode test', () => {
   });
 
   describe('buildKeyApi', () => {
-    const newStore = buildSync({
+    const newStore = buildStandard({
       store: new SyncMemoryStorage(),
       validate: {
-        simpleKey: (v) =>
-          v === null || typeof v === 'boolean' ? v : new Error('invalid'),
-        'dynamicKey${alias}': (v) =>
-          v === null || typeof v === 'boolean' ? v : new Error('invalid'),
-        'dynamicKey${0}': (v) =>
-          v === null || typeof v === 'boolean' ? v : new Error('invalid'),
-        'dynamicKey${}': (v) =>
-          v === null || typeof v === 'boolean' ? v : new Error('invalid'),
-        'simpleKey\${}': (v) =>
-          v === null || typeof v === 'boolean' ? v : new Error('invalid'),
+        simpleKey: z.union([z.null(), z.boolean()]),
+        'dynamicKey${alias}': z.union([z.null(), z.boolean()]),
+        'dynamicKey${0}': z.union([z.null(), z.boolean()]),
+        'dynamicKey${}': z.union([z.null(), z.boolean()]),
+        'simpleKey\${}': z.union([z.null(), z.boolean()]),
+      },
+      keyMode: {
+        simpleKey: 'sync',
+        'dynamicKey${alias}': 'sync',
+        'dynamicKey${0}': 'sync',
+        'dynamicKey${}': 'sync',
+        'simpleKey\${}': 'sync',
       },
       validateOnSet: true,
       validateOnGet: true,

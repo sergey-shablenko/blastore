@@ -4,5 +4,5 @@
     "outDir": "./dist/node",
     "module": "CommonJS"
   },
-  "exclude": ["benchmarks"]
+  "exclude": ["src/benchmark/web"]
 }

@@ -1,12 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 export function useSyncStore(store, key, defaultValue, options) {
     const out = useRef({ error: undefined }).current;
-    const keyApi = useMemo(() => store.buildKeyApi(key, { ...(options ?? {}), out }), [key, options]);
+    const keyApi = useMemo(() => store.buildKeyApi(key, {
+        ...(options ?? {}),
+        out,
+    }), [key, options]);
     const initialValue = useMemo(() => keyApi.get(defaultValue), [keyApi]);
     const [value, setValue] = useState(initialValue);
     useEffect(() => {
         setValue(initialValue);
-        return keyApi.subscribe(() => setValue(keyApi.get(defaultValue)));
+        return keyApi.subscribe((e) => {
+            if (e.action === 'remove') {
+                setValue(defaultValue);
+            }
+            if (e.action === 'set') {
+                setValue(e.data);
+            }
+            // ignore custom actions
+        });
     }, [keyApi]);
     return {
         value,

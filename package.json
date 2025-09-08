@@ -1,6 +1,6 @@
 {
   "name": "blastore",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "Blazing-fast, type-safe key–value storage wrapper with minimal overhead.",
   "type": "module",
   "license": "MIT",
@@ -38,6 +38,9 @@
       "async": [
         "dist/web/async.d.ts"
       ],
+      "standard": [
+        "dist/web/standard.d.ts"
+      ],
       "sync-memory-storage": [
         "dist/web/sync-memory-storage.d.ts"
       ],
@@ -49,6 +52,9 @@
       ],
       "react/use-sync-store": [
         "dist/web/react/use-sync-store.d.ts"
+      ],
+      "react/use-standard-store": [
+        "dist/web/react/use-standard-store.d.ts"
       ]
     }
   },
@@ -67,6 +73,11 @@
       "import": "./dist/web/async.js",
       "require": "./dist/node/async.js",
       "types": "./dist/web/async.d.ts"
+    },
+    "./standard": {
+      "import": "./dist/web/standard.js",
+      "require": "./dist/node/standard.js",
+      "types": "./dist/web/standard.d.ts"
     },
     "./sync-memory-storage": {
       "import": "./dist/web/sync-memory-storage.js",
@@ -88,6 +99,11 @@
       "require": "./dist/node/react/use-sync-store.js",
       "types": "./dist/web/react/use-sync-store.d.ts"
     },
+    "./react/use-standard-store": {
+      "import": "./dist/web/react/use-standard-store.js",
+      "require": "./dist/node/react/use-standard-store.js",
+      "types": "./dist/web/react/use-standard-store.d.ts"
+    },
     "./types": {
       "require": "./dist/node/types.d.ts",
       "types": "./dist/web/types.d.ts"
@@ -104,9 +120,11 @@
     "build:node": "tsc -p tsconfig.node.json",
     "build:web": "tsc -p tsconfig.web.json",
     "build": "npm run build:node && npm run build:web",
+    "dev": "vite",
     "test": "vitest"
   },
   "devDependencies": {
+    "@react-native-async-storage/async-storage": "^2.2.0",
     "@reduxjs/toolkit": "^2.8.2",
     "@types/benchmark": "^2.1.5",
     "@types/node": "^24.1.0",

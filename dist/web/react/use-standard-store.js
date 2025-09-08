@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-export function useAsyncStore(store, key, defaultValue, options) {
+export function useStandardStore(store, key, defaultValue, options) {
     const out = useRef({ error: undefined }).current;
-    const keyApi = useMemo(() => store.buildKeyApi(key, { ...(options ?? {}), out }), [key, options]);
+    const keyApi = useMemo(() => store.buildKeyApi(key, {
+        ...(options ?? {}),
+        out,
+    }), [key, options]);
     const [value, setValue] = useState(defaultValue);
     const [isInitialised, setIsInitialised] = useState(false);
     useEffect(() => {
-        keyApi.get(defaultValue).then((v) => {
+        Promise.resolve(keyApi.get(defaultValue)).then((v) => {
             setValue(v);
             setIsInitialised(true);
         });

@@ -1,45 +1,28 @@
-import type {
-  CompiledKeys,
-  KeyVariable,
+import {
   AsyncSchema,
   AsyncStore,
+  CompiledKeys,
+  IndexableKeyOf,
+  KeyVariable,
+  KeyVariables,
+  Switch,
   Trigger,
   Unsubscribe,
-  KeyVariables,
 } from './types';
-import { AsyncMemoryStorage } from './async-memory-storage';
-import { getFullKey, parseKey } from './util';
+import { buildRegexForKeyTemplate, createKeyBuilder, parseKey } from './util';
 
-const subscriptions = new WeakMap<AsyncStore, Map<string, Trigger[]>>();
-
-const defaultStore = new AsyncMemoryStorage();
+const subscriptions = new WeakMap<
+  AsyncStore<any, any>,
+  Map<string, Trigger<any>[]>
+>();
 
 export type BuildAsync<
   TValidate extends Record<string, (v: unknown) => Promise<unknown | Error>>,
-  TSerialize extends Partial<
-    Record<
-      TKey,
-      (
-        v: Exclude<Awaited<ReturnType<TValidate[TKey]>>, Error>
-      ) => Promise<unknown>
-    >
-  >,
-  TDeserialize extends Partial<
-    Record<
-      TKey,
-      (
-        v: unknown
-      ) => Promise<Exclude<Awaited<ReturnType<TValidate[TKey]>>, Error>>
-    >
-  >,
-  TKey extends keyof TValidate & string,
-> = (
-  schema: AsyncSchema<TValidate, TSerialize, TDeserialize, TKey, TKey>,
-  store: AsyncStore,
-  defaultOptions?: { validateOnGet?: boolean; validateOnSet?: boolean }
-) => {
-  schema: AsyncSchema<TValidate, TSerialize, TDeserialize, TKey, TKey>;
-  get<TGetKey extends TKey>(
+  TInput,
+  TOutput,
+> = (schema: AsyncSchema<TValidate, TInput, TOutput>) => Readonly<{
+  schema: AsyncSchema<TValidate, TInput, TOutput>;
+  get<TGetKey extends IndexableKeyOf<TValidate>>(
     key: TGetKey,
     defaultValue: Exclude<Awaited<ReturnType<TValidate[TGetKey]>>, Error>,
     options?: KeyVariables<TGetKey> & {
@@ -47,7 +30,7 @@ export type BuildAsync<
       out?: { error?: Error };
     }
   ): Promise<Exclude<Awaited<ReturnType<TValidate[TGetKey]>>, Error>>;
-  set<TSetKey extends TKey>(
+  set<TSetKey extends IndexableKeyOf<TValidate>>(
     key: TSetKey,
     value: Exclude<Awaited<ReturnType<TValidate[TSetKey]>>, Error>,
     options?: KeyVariables<TSetKey> & {
@@ -55,28 +38,57 @@ export type BuildAsync<
       out?: { error?: Error };
     }
   ): Promise<boolean>;
-  remove<TRemoveKey extends TKey>(
+  remove<TRemoveKey extends IndexableKeyOf<TValidate>>(
     key: TRemoveKey,
     options?: KeyVariables<TRemoveKey> & {
       out?: { error?: Error };
     }
   ): Promise<boolean>;
-  subscribe<TSubKey extends TKey>(
+  subscribe<TSubKey extends IndexableKeyOf<TValidate>>(
     key: TSubKey,
-    trigger: Trigger,
+    trigger: Trigger<Exclude<Awaited<ReturnType<TValidate[TSubKey]>>, Error>>,
     options?: KeyVariables<TSubKey>
   ): Unsubscribe;
-  untypedSubscribe(key: string, trigger: Trigger): Unsubscribe;
-  emit<TEmitKey extends TKey>(
+  untypedSubscribe(
+    key: string,
+    trigger: Trigger<
+      Exclude<Awaited<ReturnType<TValidate[keyof TValidate]>>, Error>
+    >
+  ): Unsubscribe;
+  emit<TEmitKey extends IndexableKeyOf<TValidate>>(
     key: TEmitKey,
-    variables?: KeyVariables<TEmitKey>['variables']
-  ): void;
-  untypedEmit(key: string): void;
-  buildKeyApi: <TApiKey extends TKey>(
+    action: 'remove'
+  ): Promise<boolean>;
+  emit<TEmitKey extends IndexableKeyOf<TValidate>>(
+    key: TEmitKey,
+    action: 'set' | string,
+    data: Exclude<Awaited<ReturnType<TValidate[TEmitKey]>>, Error>,
+    options?: KeyVariables<TEmitKey> & {
+      validate?: boolean;
+      out?: { error?: Error };
+    }
+  ): Promise<boolean>;
+  untypedEmit(key: string, action: 'remove'): Promise<boolean>;
+  untypedEmit<TFDeserialize extends boolean>(
+    key: string,
+    action: 'set' | string,
+    data: Switch<
+      TFDeserialize,
+      TOutput,
+      Exclude<Awaited<ReturnType<TValidate[keyof TValidate]>>, Error>
+    >,
+    options?: {
+      validate?: boolean;
+      deserialize?: TFDeserialize;
+      out?: { error?: Error };
+    }
+  ): Promise<boolean>;
+  buildKeyApi: <TApiKey extends IndexableKeyOf<TValidate>>(
     key: TApiKey,
     options?: KeyVariables<TApiKey> & {
       validateOnGet?: boolean;
       validateOnSet?: boolean;
+      validateOnEmit?: boolean;
       out?: { error?: Error };
     }
   ) => {
@@ -87,55 +99,55 @@ export type BuildAsync<
       value: Exclude<Awaited<ReturnType<TValidate[TApiKey]>>, Error>
     ): Promise<boolean>;
     remove(): Promise<boolean>;
-    subscribe(trigger: Trigger): Unsubscribe;
-    emit(): void;
+    subscribe(
+      trigger: Trigger<Exclude<Awaited<ReturnType<TValidate[TApiKey]>>, Error>>
+    ): Unsubscribe;
+    emit(action: 'remove'): Promise<boolean>;
+    emit(
+      action: 'set' | string,
+      data: Exclude<Awaited<ReturnType<TValidate[TApiKey]>>, Error>
+    ): Promise<boolean>;
   };
-};
+}>;
 
 export const buildAsync = (<
   TValidate extends Record<string, (v: unknown) => Promise<unknown | Error>>,
-  TSerialize extends Partial<
-    Record<
-      TKey,
-      (
-        v: Exclude<Awaited<ReturnType<TValidate[TKey]>>, Error>
-      ) => Promise<unknown>
-    >
-  >,
-  TDeserialize extends Partial<
-    Record<
-      TKey,
-      (
-        v: unknown
-      ) => Promise<Exclude<Awaited<ReturnType<TValidate[TKey]>>, Error>>
-    >
-  >,
-  TKey extends keyof TValidate & string,
+  TInput,
+  TOutput,
 >(
-  schema: AsyncSchema<TValidate, TSerialize, TDeserialize, TKey, TKey>,
-  store: AsyncStore = defaultStore satisfies AsyncStore,
-  defaultOptions?: { validateOnGet?: boolean; validateOnSet?: boolean }
+  schema: AsyncSchema<TValidate, TInput, TOutput>
 ) => {
-  const keys = Object.freeze(
-    Object.keys(schema.validate).reduce((obj, key) => {
-      const parts = parseKey(key);
-      if (parts.some(([, variable]) => variable)) {
-        obj[key] = new Function(
-          'vars',
-          `return ${parts.map(([s, i]) => [`'${s}'`, i ? `vars${/^\d+$/i.test(i) || i === 'true' || i === 'false' ? `[${i}]` : /^([^0-9a-z]+|)$/i.test(i) ? `['${i}']` : `.${i}`}` : null].filter(Boolean).join(' + ')).join(' + ')};`
-        ) as (vars: Record<string, KeyVariable>) => string;
-      }
-      return obj;
-    }, {} as CompiledKeys)
-  );
+  const store = schema.store;
+  const validate = Object.freeze({ ...schema.validate });
+  const defaultSerialize = schema.defaultSerialize;
+  const defaultDeserialize = schema.defaultDeserialize;
+  const serialize = Object.freeze({ ...schema.serialize });
+  const deserialize = Object.freeze({ ...schema.deserialize });
+  const defaultValidateOnGet = schema.validateOnGet === true;
+  const defaultValidateOnSet = schema.validateOnSet === true;
+  const defaultValidateOnEmit = schema.validateOnEmit === true;
+
+  const keys = Object.keys(validate).map((key) => {
+    const parts = parseKey(key);
+    const regex = buildRegexForKeyTemplate(parts);
+    if (parts.some(([, variable]) => variable)) {
+      const builder = new Function(
+        'vars',
+        `return ${parts.map(([s, i]) => [`'${s}'`, i ? `vars${/^\d+$/i.test(i) || i === 'true' || i === 'false' ? `[${i}]` : /^([^0-9a-z]+|)$/i.test(i) ? `['${i}']` : `.${i}`}` : null].filter(Boolean).join(' + ')).join(' + ')};`
+      ) as (vars: Record<string, KeyVariable>) => string;
+      return { key, parts, regex, builder };
+    }
+    return { key, parts, regex };
+  }) satisfies CompiledKeys;
+  const getFullKey = createKeyBuilder(keys);
 
   const untypedSubscribe: ReturnType<
-    BuildAsync<TValidate, TSerialize, TDeserialize, TKey>
+    BuildAsync<TValidate, TInput, TOutput>
   >['untypedSubscribe'] = (key, trigger) => {
     let storeSubscriptions = subscriptions.get(store);
 
     if (!storeSubscriptions) {
-      storeSubscriptions = new Map<string, Trigger[]>();
+      storeSubscriptions = new Map<string, Trigger<any>[]>();
       subscriptions.set(store, storeSubscriptions);
     }
 
@@ -158,67 +170,155 @@ export const buildAsync = (<
   };
 
   const subscribe: ReturnType<
-    BuildAsync<TValidate, TSerialize, TDeserialize, TKey>
+    BuildAsync<TValidate, TInput, TOutput>
   >['subscribe'] = (key, trigger, options) => {
     const fullKey = options?.variables
-      ? getFullKey(keys, key, options.variables)
+      ? getFullKey(key, options.variables)
       : key;
     return untypedSubscribe(fullKey, trigger);
   };
 
-  const untypedEmit: ReturnType<
-    BuildAsync<TValidate, TSerialize, TDeserialize, TKey>
-  >['untypedEmit'] = (key) => {
+  const _untypedEmit = (
+    key: string,
+    action: 'remove' | 'set' | string,
+    data?: any
+  ) => {
     const storeSubs = subscriptions.get(store);
     const subs = storeSubs && storeSubs.get(key);
     if (subs && subs.length) {
+      const payload = { action, data };
       for (let i = 0; i < subs.length; i++) {
-        subs[i]();
+        subs[i](payload);
       }
     }
   };
 
-  const emit: ReturnType<
-    BuildAsync<TValidate, TSerialize, TDeserialize, TKey>
-  >['emit'] = (key, variables) => {
-    const fullKey = variables ? getFullKey(keys, key, variables) : key;
-    untypedEmit(fullKey);
-  };
+  const untypedEmit: ReturnType<
+    BuildAsync<TValidate, TInput, TOutput>
+  >['untypedEmit'] = (async (key, action, data, options) => {
+    let out = undefined;
+    if (options) {
+      if (options.out && typeof options.out === 'object') {
+        out = options.out;
+      }
+    }
 
-  const get: ReturnType<
-    BuildAsync<TValidate, TSerialize, TDeserialize, TKey>
-  >['get'] = async (key, defaultValue, options) => {
+    try {
+      for (let i = 0; i < keys.length; i++) {
+        const parsedKey = keys[i];
+        if (new RegExp(parsedKey.regex).test(key)) {
+          let dataToEmit: any = data;
+          if (options?.deserialize) {
+            const deserializer =
+              typeof deserialize?.[key as keyof typeof deserialize] ===
+              'function'
+                ? deserialize[key as keyof typeof deserialize]
+                : typeof defaultDeserialize === 'function'
+                  ? defaultDeserialize
+                  : undefined;
+            if (deserializer) {
+              dataToEmit = await deserializer(data as any);
+            }
+          }
+          if (options?.validate) {
+            dataToEmit = await validate[parsedKey.key](dataToEmit);
+          }
+
+          if (dataToEmit instanceof Error) {
+            if (out) {
+              out.error = dataToEmit;
+            }
+            return false;
+          }
+          _untypedEmit(key, action, dataToEmit as any);
+          return true;
+        }
+      }
+    } catch (e) {
+      if (out) {
+        out.error = e instanceof Error ? e : new Error(String(e));
+      }
+    }
+    return false;
+  }) as ReturnType<BuildAsync<TValidate, TInput, TOutput>>['untypedEmit'];
+
+  const emit: ReturnType<BuildAsync<TValidate, TInput, TOutput>>['emit'] =
+    (async (key, action, data, options) => {
+      let fullKey = key;
+      let out = undefined;
+      let validateOnEmit = defaultValidateOnEmit;
+      const validator = validate[key];
+      if (options) {
+        if (options.variables) {
+          fullKey = getFullKey(key, options.variables) as any;
+        }
+        if (options.out && typeof options.out === 'object') {
+          out = options.out;
+        }
+        if (typeof options.validate === 'boolean') {
+          validateOnEmit = options.validate;
+        }
+      }
+
+      if (validateOnEmit) {
+        try {
+          const value = await validator(data as any);
+
+          if (value instanceof Error) {
+            if (out) {
+              out.error = value;
+            }
+            return false;
+          }
+          _untypedEmit(fullKey, action, value as any);
+          return true;
+        } catch (e) {
+          if (out) {
+            out.error = e instanceof Error ? e : new Error(String(e));
+          }
+          return false;
+        }
+      }
+      _untypedEmit(fullKey, action, data as any);
+      return true;
+    }) as ReturnType<BuildAsync<TValidate, TInput, TOutput>>['emit'];
+
+  const get: ReturnType<BuildAsync<TValidate, TInput, TOutput>>['get'] = async (
+    key,
+    defaultValue,
+    options
+  ) => {
     const deserializer =
-      typeof schema.deserialize?.[key] === 'function'
-        ? schema.deserialize[key]
-        : typeof schema.defaultDeserialize === 'function'
-          ? schema.defaultDeserialize
+      typeof deserialize?.[key] === 'function'
+        ? deserialize[key]
+        : typeof defaultDeserialize === 'function'
+          ? defaultDeserialize
           : undefined;
     let fullKey = key;
     let out = undefined;
-    let validate = defaultOptions?.validateOnGet === true;
-    const validator = schema.validate[key];
+    let validateOnGet = defaultValidateOnGet;
+    const validator = validate[key];
 
     if (options) {
       if (options.variables) {
-        fullKey = getFullKey(keys, key, options.variables) as any;
+        fullKey = getFullKey(key, options.variables) as any;
       }
       if (options.out && typeof options.out === 'object') {
         out = options.out;
       }
       if (typeof options.validate === 'boolean') {
-        validate = options.validate;
+        validateOnGet = options.validate;
       }
     }
 
     try {
-      let value = await store.getItem(fullKey);
+      let value: any = await store.getItem(fullKey);
 
       if (deserializer) {
         value = await deserializer(value);
       }
 
-      if (validate) {
+      if (validateOnGet) {
         value = await validator(value);
 
         if (value instanceof Error) {
@@ -229,7 +329,7 @@ export const buildAsync = (<
         }
       }
 
-      return value as Exclude<Awaited<ReturnType<TValidate[TKey]>>, Error>;
+      return value;
     } catch (e) {
       if (out) {
         out.error = e instanceof Error ? e : new Error(String(e));
@@ -238,35 +338,37 @@ export const buildAsync = (<
     }
   };
 
-  const set: ReturnType<
-    BuildAsync<TValidate, TSerialize, TDeserialize, TKey>
-  >['set'] = async (key, value, options) => {
+  const set: ReturnType<BuildAsync<TValidate, TInput, TOutput>>['set'] = async (
+    key,
+    value,
+    options
+  ) => {
     const serializer =
-      typeof schema.serialize?.[key] === 'function'
-        ? schema.serialize[key]
-        : typeof schema.defaultSerialize === 'function'
-          ? schema.defaultSerialize
+      typeof serialize?.[key] === 'function'
+        ? serialize[key]
+        : typeof defaultSerialize === 'function'
+          ? defaultSerialize
           : undefined;
     let fullKey = key;
     let out = undefined;
-    let validate = defaultOptions?.validateOnSet === true;
-    const validator = schema.validate[key];
+    let validateOnSet = defaultValidateOnSet;
+    const validator = validate[key];
 
     if (options) {
       if (options.variables) {
-        fullKey = getFullKey(keys, key, options.variables) as any;
+        fullKey = getFullKey(key, options.variables) as any;
       }
       if (options.out && typeof options.out === 'object') {
         out = options.out;
       }
       if (typeof options.validate === 'boolean') {
-        validate = options.validate;
+        validateOnSet = options.validate;
       }
     }
 
     try {
-      let insertValue: unknown = value;
-      if (validate) {
+      let insertValue: any = value;
+      if (validateOnSet) {
         insertValue = await validator(insertValue);
 
         if (insertValue instanceof Error) {
@@ -277,10 +379,10 @@ export const buildAsync = (<
         }
       }
       if (serializer) {
-        insertValue = await serializer(insertValue as any);
+        insertValue = await serializer(insertValue);
       }
       await store.setItem(fullKey, insertValue);
-      untypedEmit(fullKey);
+      _untypedEmit(fullKey, 'set', insertValue);
       return true;
     } catch (e) {
       if (out) {
@@ -291,14 +393,14 @@ export const buildAsync = (<
   };
 
   const remove: ReturnType<
-    BuildAsync<TValidate, TSerialize, TDeserialize, TKey>
+    BuildAsync<TValidate, TInput, TOutput>
   >['remove'] = async (key, options) => {
     let fullKey = key;
     let out = undefined;
 
     if (options) {
       if (options.variables) {
-        fullKey = getFullKey(keys, key, options.variables) as any;
+        fullKey = getFullKey(key, options.variables) as any;
       }
       if (options.out && typeof options.out === 'object') {
         out = options.out;
@@ -307,7 +409,7 @@ export const buildAsync = (<
 
     try {
       await store.removeItem(fullKey);
-      untypedEmit(fullKey);
+      _untypedEmit(fullKey, 'remove');
       return true;
     } catch (e) {
       if (out) {
@@ -318,29 +420,30 @@ export const buildAsync = (<
   };
 
   const buildKeyApi: ReturnType<
-    BuildAsync<TValidate, TSerialize, TDeserialize, TKey>
+    BuildAsync<TValidate, TInput, TOutput>
   >['buildKeyApi'] = (key, options) => {
     const deserializer =
-      typeof schema.deserialize?.[key] === 'function'
-        ? schema.deserialize[key]
-        : typeof schema.defaultDeserialize === 'function'
-          ? schema.defaultDeserialize
+      typeof deserialize?.[key] === 'function'
+        ? deserialize[key]
+        : typeof defaultDeserialize === 'function'
+          ? defaultDeserialize
           : undefined;
     const serializer =
-      typeof schema.serialize?.[key] === 'function'
-        ? schema.serialize[key]
-        : typeof schema.defaultSerialize === 'function'
-          ? schema.defaultSerialize
+      typeof serialize?.[key] === 'function'
+        ? serialize[key]
+        : typeof defaultSerialize === 'function'
+          ? defaultSerialize
           : undefined;
     let fullKey = key;
     let out = undefined;
-    let validateOnSet = defaultOptions?.validateOnSet === true;
-    let validateOnGet = defaultOptions?.validateOnGet === true;
-    const validator = schema.validate[key];
+    let validateOnSet = defaultValidateOnSet;
+    let validateOnGet = defaultValidateOnGet;
+    let validateOnEmit = defaultValidateOnEmit;
+    const validator = validate[key];
 
     if (options) {
       if (options.variables) {
-        fullKey = getFullKey(keys, key, options.variables) as any;
+        fullKey = getFullKey(key, options.variables) as any;
       }
       if (options.out && typeof options.out === 'object') {
         out = options.out;
@@ -351,23 +454,45 @@ export const buildAsync = (<
       if (typeof options.validateOnGet === 'boolean') {
         validateOnGet = options.validateOnGet;
       }
+      if (typeof options.validateOnEmit === 'boolean') {
+        validateOnEmit = options.validateOnEmit;
+      }
     }
 
     const _emit: ReturnType<
-      ReturnType<
-        BuildAsync<TValidate, TSerialize, TDeserialize, TKey>
-      >['buildKeyApi']
-    >['emit'] = () => {
-      untypedEmit(fullKey);
-    };
+      ReturnType<BuildAsync<TValidate, TInput, TOutput>>['buildKeyApi']
+    >['emit'] = (async (action, data) => {
+      if (validateOnEmit) {
+        try {
+          const value =
+            action === 'remove' ? undefined : await validator(data as any);
+
+          if (value instanceof Error) {
+            if (out) {
+              out.error = value;
+            }
+            return false;
+          }
+          _untypedEmit(fullKey, action, value as any);
+          return true;
+        } catch (e) {
+          if (out) {
+            out.error = e instanceof Error ? e : new Error(String(e));
+          }
+          return false;
+        }
+      }
+      _untypedEmit(fullKey, action, data as any);
+      return true;
+    }) as ReturnType<
+      ReturnType<BuildAsync<TValidate, TInput, TOutput>>['buildKeyApi']
+    >['emit'];
 
     const _get: ReturnType<
-      ReturnType<
-        BuildAsync<TValidate, TSerialize, TDeserialize, TKey>
-      >['buildKeyApi']
+      ReturnType<BuildAsync<TValidate, TInput, TOutput>>['buildKeyApi']
     >['get'] = async (defaultValue) => {
       try {
-        let value = await store.getItem(fullKey);
+        let value: any = await store.getItem(fullKey);
         if (deserializer) {
           value = await deserializer(value);
         }
@@ -393,12 +518,10 @@ export const buildAsync = (<
     };
 
     const _set: ReturnType<
-      ReturnType<
-        BuildAsync<TValidate, TSerialize, TDeserialize, TKey>
-      >['buildKeyApi']
+      ReturnType<BuildAsync<TValidate, TInput, TOutput>>['buildKeyApi']
     >['set'] = async (value) => {
       try {
-        let insertValue: unknown = value;
+        let insertValue: any = value;
         if (validateOnSet) {
           insertValue = await validator(insertValue);
 
@@ -413,7 +536,7 @@ export const buildAsync = (<
           insertValue = await serializer(insertValue as any);
         }
         await store.setItem(fullKey, insertValue);
-        untypedEmit(fullKey);
+        _untypedEmit(fullKey, 'set', insertValue);
         return true;
       } catch (e) {
         if (out) {
@@ -424,13 +547,11 @@ export const buildAsync = (<
     };
 
     const _remove: ReturnType<
-      ReturnType<
-        BuildAsync<TValidate, TSerialize, TDeserialize, TKey>
-      >['buildKeyApi']
+      ReturnType<BuildAsync<TValidate, TInput, TOutput>>['buildKeyApi']
     >['remove'] = async () => {
       try {
         await store.removeItem(fullKey);
-        untypedEmit(fullKey);
+        _untypedEmit(fullKey, 'remove');
         return true;
       } catch (e) {
         if (out) {
@@ -441,9 +562,7 @@ export const buildAsync = (<
     };
 
     const _subscribe: ReturnType<
-      ReturnType<
-        BuildAsync<TValidate, TSerialize, TDeserialize, TKey>
-      >['buildKeyApi']
+      ReturnType<BuildAsync<TValidate, TInput, TOutput>>['buildKeyApi']
     >['subscribe'] = (trigger) => {
       return untypedSubscribe(fullKey, trigger);
     };
@@ -457,7 +576,7 @@ export const buildAsync = (<
     });
   };
 
-  return {
+  return Object.freeze({
     schema,
     get,
     set,
@@ -467,5 +586,5 @@ export const buildAsync = (<
     emit,
     untypedEmit,
     buildKeyApi,
-  } as ReturnType<BuildAsync<TValidate, TSerialize, TDeserialize, TKey>>;
-}) satisfies BuildAsync<any, any, any, any>;
+  }) as ReturnType<BuildAsync<TValidate, TInput, TOutput>>;
+}) satisfies BuildAsync<any, any, any>;

@@ -8,10 +8,8 @@
     "strictNullChecks": true,
     "skipLibCheck": true,
     "allowSyntheticDefaultImports": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "noImplicitAny": true
   },
-  "include": [
-    "src",
-    "benchmarks"
-  ]
+  "include": ["src", "benchmarks"]
 }

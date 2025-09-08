@@ -3,7 +3,7 @@ import { type KeyVariables } from '../types';
 import { BuildAsync } from '../async';
 
 export function useAsyncStore<
-  TStore extends ReturnType<BuildAsync<any, any, any, any>>,
+  TStore extends ReturnType<BuildAsync<any, any, any>>,
   TKey extends keyof TStore['schema']['validate'] & string,
 >(
   store: TStore,
@@ -31,9 +31,16 @@ export function useAsyncStore<
       setIsInitialised(true);
     });
 
-    return keyApi.subscribe(async () => {
-      setValue(await keyApi.get(defaultValue));
-      setIsInitialised(true);
+    return keyApi.subscribe((e) => {
+      if (e.action === 'remove') {
+        setValue(defaultValue);
+        setIsInitialised(true);
+      }
+      if (e.action === 'set') {
+        setValue(e.data);
+        setIsInitialised(true);
+      }
+      // ignore custom actions
     });
   }, [keyApi]);
 
@@ -43,12 +50,7 @@ export function useAsyncStore<
     error: out.error,
     set: keyApi.set as ReturnType<
       ReturnType<
-        BuildAsync<
-          TStore['schema']['validate'],
-          TStore['schema']['serialize'],
-          TStore['schema']['deserialize'],
-          TKey
-        >
+        BuildAsync<TStore['schema']['validate'], any, any>
       >['buildKeyApi']
     >['set'],
     remove: keyApi.remove,

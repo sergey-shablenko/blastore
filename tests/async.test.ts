@@ -1,28 +1,25 @@
 import { describe, expect, it } from 'vitest';
 import { buildAsync } from '../src/async';
 import { AsyncMemoryStorage } from '../src/async-memory-storage';
-import { SyncMemoryStorage } from '../src/sync-memory-storage';
-import { buildSync } from '../src/sync';
 
 describe('async mode test', () => {
-  const store = buildAsync(
-    {
-      validate: {
-        simpleKey: async (v) =>
-          v === null || typeof v === 'boolean' ? v : new Error('invalid'),
-        'dynamicKey${alias}': async (v) =>
-          v === null || typeof v === 'boolean' ? v : new Error('invalid'),
-        'dynamicKey${0}': async (v) =>
-          v === null || typeof v === 'boolean' ? v : new Error('invalid'),
-        'dynamicKey${}': async (v) =>
-          v === null || typeof v === 'boolean' ? v : new Error('invalid'),
-        'simpleKey\${}': async (v) =>
-          v === null || typeof v === 'boolean' ? v : new Error('invalid'),
-      },
+  const store = buildAsync({
+    store: new AsyncMemoryStorage(),
+    validate: {
+      simpleKey: async (v) =>
+        v === null || typeof v === 'boolean' ? v : new Error('invalid'),
+      'dynamicKey${alias}': async (v) =>
+        v === null || typeof v === 'boolean' ? v : new Error('invalid'),
+      'dynamicKey${0}': async (v) =>
+        v === null || typeof v === 'boolean' ? v : new Error('invalid'),
+      'dynamicKey${}': async (v) =>
+        v === null || typeof v === 'boolean' ? v : new Error('invalid'),
+      'simpleKey\${}': async (v) =>
+        v === null || typeof v === 'boolean' ? v : new Error('invalid'),
     },
-    new AsyncMemoryStorage(),
-    { validateOnSet: true, validateOnGet: true }
-  );
+    validateOnSet: true,
+    validateOnGet: true,
+  });
 
   it('get default value', async () => {
     expect(await store.get('simpleKey', null)).toBeNull();
@@ -42,10 +39,10 @@ describe('async mode test', () => {
     expect(await store.set('simpleKey', {} as any)).toBe(false);
     expect(await store.get('simpleKey', null)).toBe(false);
     expect(
-      await store.set('dynamicKey${0}', true, { variables: { 0: 1 } })
+      await store.set('dynamicKey${0}', true, { variables: { 0: '1' } })
     ).toBe(true);
     expect(
-      await store.get('dynamicKey${0}', null, { variables: { 0: 1 } })
+      await store.get('dynamicKey${0}', null, { variables: { 0: '1' } })
     ).toBe(true);
     expect(
       await store.set('dynamicKey${alias}', true, {
@@ -58,10 +55,10 @@ describe('async mode test', () => {
       })
     ).toBe(true);
     expect(
-      await store.set('dynamicKey${0}', 123 as any, { variables: { 0: 1 } })
+      await store.set('dynamicKey${0}', 123 as any, { variables: { 0: '1' } })
     ).toBe(false);
     expect(
-      await store.get('dynamicKey${0}', null, { variables: { 0: 1 } })
+      await store.get('dynamicKey${0}', null, { variables: { 0: '1' } })
     ).toBe(true);
     expect(
       await store.set('dynamicKey${alias}', 123 as any, {
@@ -104,12 +101,12 @@ describe('async mode test', () => {
     const unsub = store.subscribe('simpleKey', () => {
       calls += 1;
     });
-    store.emit('simpleKey');
-    store.emit('dynamicKey${0}');
-    store.emit('simpleKey');
+    store.emit('simpleKey', 'set', false);
+    store.emit('dynamicKey${0}', 'set', false);
+    store.emit('simpleKey', 'set', false);
     unsub();
-    store.emit('simpleKey');
-    store.emit('simpleKey');
+    store.emit('simpleKey', 'set', false);
+    store.emit('simpleKey', 'set', false);
     expect(calls).toBe(2);
 
     let dynamicCalls = 0;
@@ -120,13 +117,19 @@ describe('async mode test', () => {
       },
       { variables: { alias: 'alias' } }
     );
-    store.emit('simpleKey');
-    store.emit('dynamicKey${alias}');
-    store.emit('dynamicKey${alias}', { alias: '123' });
-    store.emit('dynamicKey${alias}', { alias: 'alias' });
-    store.emit('simpleKey');
+    store.emit('simpleKey', 'set', false);
+    store.emit('dynamicKey${alias}', 'set', false);
+    store.emit('dynamicKey${alias}', 'set', false, {
+      variables: { alias: '123' },
+    });
+    store.emit('dynamicKey${alias}', 'set', false, {
+      variables: { alias: 'alias' },
+    });
+    store.emit('simpleKey', 'set', false);
     dynamicUnsub();
-    store.emit('dynamicKey${alias}', { alias: 'alias' });
+    store.emit('dynamicKey${alias}', 'set', false, {
+      variables: { alias: 'alias' },
+    });
     expect(dynamicCalls).toBe(1);
   });
 
@@ -135,36 +138,41 @@ describe('async mode test', () => {
     const dynamicUnsub = store.untypedSubscribe('dynamicKeyalias', () => {
       dynamicCalls += 1;
     });
-    store.emit('simpleKey');
-    store.emit('dynamicKey${alias}');
-    store.emit('dynamicKey${alias}', { alias: '123' });
-    store.emit('dynamicKey${alias}', { alias: 'alias' });
-    store.untypedEmit('dynamicKeyalias');
-    store.emit('simpleKey');
+    store.emit('simpleKey', 'set', false);
+    store.emit('dynamicKey${alias}', 'set', false);
+    store.emit('dynamicKey${alias}', 'set', false, {
+      variables: { alias: '123' },
+    });
+    store.emit('dynamicKey${alias}', 'set', false, {
+      variables: { alias: 'alias' },
+    });
+    store.untypedEmit('dynamicKeyalias', 'set', false);
+    store.emit('simpleKey', 'set', false);
     dynamicUnsub();
-    store.emit('dynamicKey${alias}', { alias: 'alias' });
+    store.emit('dynamicKey${alias}', 'set', false, {
+      variables: { alias: 'alias' },
+    });
     expect(dynamicCalls).toBe(2);
   });
 
   describe('buildKeyApi', () => {
-    const newStore = buildAsync(
-      {
-        validate: {
-          simpleKey: async (v) =>
-            v === null || typeof v === 'boolean' ? v : new Error('invalid'),
-          'dynamicKey${alias}': async (v) =>
-            v === null || typeof v === 'boolean' ? v : new Error('invalid'),
-          'dynamicKey${0}': async (v) =>
-            v === null || typeof v === 'boolean' ? v : new Error('invalid'),
-          'dynamicKey${}': async (v) =>
-            v === null || typeof v === 'boolean' ? v : new Error('invalid'),
-          'simpleKey\${}': async (v) =>
-            v === null || typeof v === 'boolean' ? v : new Error('invalid'),
-        },
+    const newStore = buildAsync({
+      store: new AsyncMemoryStorage(),
+      validate: {
+        simpleKey: async (v) =>
+          v === null || typeof v === 'boolean' ? v : new Error('invalid'),
+        'dynamicKey${alias}': async (v) =>
+          v === null || typeof v === 'boolean' ? v : new Error('invalid'),
+        'dynamicKey${0}': async (v) =>
+          v === null || typeof v === 'boolean' ? v : new Error('invalid'),
+        'dynamicKey${}': async (v) =>
+          v === null || typeof v === 'boolean' ? v : new Error('invalid'),
+        'simpleKey\${}': async (v) =>
+          v === null || typeof v === 'boolean' ? v : new Error('invalid'),
       },
-      new AsyncMemoryStorage(),
-      { validateOnSet: true, validateOnGet: true }
-    );
+      validateOnSet: true,
+      validateOnGet: true,
+    });
     const simpleKeyApi = newStore.buildKeyApi('simpleKey');
     const dynamicKeyAliasApi = newStore.buildKeyApi('dynamicKey${alias}', {
       variables: {
@@ -172,7 +180,7 @@ describe('async mode test', () => {
       },
     });
     const dynamicKey1Api = newStore.buildKeyApi('dynamicKey${0}', {
-      variables: { 0: 1 },
+      variables: { 0: '1' },
     });
     const dynamicKeyUndefinedApi = newStore.buildKeyApi('dynamicKey${0}');
 
@@ -221,29 +229,27 @@ describe('async mode test', () => {
 
     it('key format', async () => {
       const memStore = new AsyncMemoryStorage();
-      const keyStore = buildAsync(
-        {
-          validate: {
-            'dynamicKey${alias}': async (v) =>
-              v === null || typeof v === 'boolean' ? v : new Error('invalid'),
-            'dynamicKey${0}': async (v) =>
-              v === null || typeof v === 'boolean' ? v : new Error('invalid'),
-            'dynamicKey${}': async (v) =>
-              v === null || typeof v === 'boolean' ? v : new Error('invalid'),
-            'simpleKey\\${}': async (v) =>
-              v === null || typeof v === 'boolean' ? v : new Error('invalid'),
-            'simpleKey${alias}test': async (v) =>
-              v === null || typeof v === 'boolean' ? v : new Error('invalid'),
-            'simpleKey${alias}tes${alias}t': async (v) =>
-              v === null || typeof v === 'boolean' ? v : new Error('invalid'),
-            '${0}simpleKey${alias}tes${alias}t': async (v) =>
-              v === null || typeof v === 'boolean' ? v : new Error('invalid'),
-          },
+      const keyStore = buildAsync({
+        store: memStore,
+        validate: {
+          'dynamicKey${alias}': async (v) =>
+            v === null || typeof v === 'boolean' ? v : new Error('invalid'),
+          'dynamicKey${0}': async (v) =>
+            v === null || typeof v === 'boolean' ? v : new Error('invalid'),
+          'dynamicKey${}': async (v) =>
+            v === null || typeof v === 'boolean' ? v : new Error('invalid'),
+          'simpleKey\\${}': async (v) =>
+            v === null || typeof v === 'boolean' ? v : new Error('invalid'),
+          'simpleKey${alias}test': async (v) =>
+            v === null || typeof v === 'boolean' ? v : new Error('invalid'),
+          'simpleKey${alias}tes${alias}t': async (v) =>
+            v === null || typeof v === 'boolean' ? v : new Error('invalid'),
+          '${0}simpleKey${alias}tes${alias}t': async (v) =>
+            v === null || typeof v === 'boolean' ? v : new Error('invalid'),
         },
-        memStore
-      );
+      });
       expect(
-        await keyStore.set('dynamicKey${0}', false, { variables: { 0: 1 } })
+        await keyStore.set('dynamicKey${0}', false, { variables: { 0: '1' } })
       ).toBe(true);
       expect(memStore.state[`dynamicKey${1}`]).toBe(false);
 
@@ -276,7 +282,7 @@ describe('async mode test', () => {
 
       expect(
         await keyStore.set('${0}simpleKey${alias}tes${alias}t', false, {
-          variables: { alias: 'alias', 0: 1 },
+          variables: { alias: 'alias', 0: '1' },
         })
       ).toBe(true);
     });
@@ -286,25 +292,25 @@ describe('async mode test', () => {
       const unsub = simpleKeyApi.subscribe(() => {
         calls += 1;
       });
-      simpleKeyApi.emit();
-      dynamicKeyUndefinedApi.emit();
-      simpleKeyApi.emit();
+      simpleKeyApi.emit('set', false);
+      dynamicKeyUndefinedApi.emit('set', false);
+      simpleKeyApi.emit('set', false);
       unsub();
-      simpleKeyApi.emit();
-      simpleKeyApi.emit();
+      simpleKeyApi.emit('set', false);
+      simpleKeyApi.emit('set', false);
       expect(calls).toBe(2);
 
       let dynamicCalls = 0;
       const dynamicUnsub = dynamicKeyAliasApi.subscribe(() => {
         dynamicCalls += 1;
       });
-      simpleKeyApi.emit();
-      dynamicKeyUndefinedApi.emit();
-      dynamicKey1Api.emit();
-      dynamicKeyAliasApi.emit();
-      simpleKeyApi.emit();
+      simpleKeyApi.emit('set', false);
+      dynamicKeyUndefinedApi.emit('set', false);
+      dynamicKey1Api.emit('set', false);
+      dynamicKeyAliasApi.emit('set', false);
+      simpleKeyApi.emit('set', false);
       dynamicUnsub();
-      dynamicKeyAliasApi.emit();
+      dynamicKeyAliasApi.emit('set', false);
       expect(dynamicCalls).toBe(1);
     });
   });

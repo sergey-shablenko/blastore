@@ -4,5 +4,5 @@
     "outDir": "./dist/web",
     "module": "ESNext"
   },
-  "exclude": ["benchmarks"]
+  "exclude": ["src/benchmark/node"]
 }

@@ -1,33 +1,44 @@
-import type { AsyncSchema, AsyncStore, Trigger, Unsubscribe, KeyVariables } from './types';
-export type BuildAsync<TValidate extends Record<string, (v: unknown) => Promise<unknown | Error>>, TSerialize extends Partial<Record<TKey, (v: Exclude<Awaited<ReturnType<TValidate[TKey]>>, Error>) => Promise<unknown>>>, TDeserialize extends Partial<Record<TKey, (v: unknown) => Promise<Exclude<Awaited<ReturnType<TValidate[TKey]>>, Error>>>>, TKey extends keyof TValidate & string> = (schema: AsyncSchema<TValidate, TSerialize, TDeserialize, TKey, TKey>, store: AsyncStore, defaultOptions?: {
-    validateOnGet?: boolean;
-    validateOnSet?: boolean;
-}) => {
-    schema: AsyncSchema<TValidate, TSerialize, TDeserialize, TKey, TKey>;
-    get<TGetKey extends TKey>(key: TGetKey, defaultValue: Exclude<Awaited<ReturnType<TValidate[TGetKey]>>, Error>, options?: KeyVariables<TGetKey> & {
+import { AsyncSchema, IndexableKeyOf, KeyVariables, Switch, Trigger, Unsubscribe } from './types';
+export type BuildAsync<TValidate extends Record<string, (v: unknown) => Promise<unknown | Error>>, TInput, TOutput> = (schema: AsyncSchema<TValidate, TInput, TOutput>) => Readonly<{
+    schema: AsyncSchema<TValidate, TInput, TOutput>;
+    get<TGetKey extends IndexableKeyOf<TValidate>>(key: TGetKey, defaultValue: Exclude<Awaited<ReturnType<TValidate[TGetKey]>>, Error>, options?: KeyVariables<TGetKey> & {
         validate?: boolean;
         out?: {
             error?: Error;
         };
     }): Promise<Exclude<Awaited<ReturnType<TValidate[TGetKey]>>, Error>>;
-    set<TSetKey extends TKey>(key: TSetKey, value: Exclude<Awaited<ReturnType<TValidate[TSetKey]>>, Error>, options?: KeyVariables<TSetKey> & {
+    set<TSetKey extends IndexableKeyOf<TValidate>>(key: TSetKey, value: Exclude<Awaited<ReturnType<TValidate[TSetKey]>>, Error>, options?: KeyVariables<TSetKey> & {
         validate?: boolean;
         out?: {
             error?: Error;
         };
     }): Promise<boolean>;
-    remove<TRemoveKey extends TKey>(key: TRemoveKey, options?: KeyVariables<TRemoveKey> & {
+    remove<TRemoveKey extends IndexableKeyOf<TValidate>>(key: TRemoveKey, options?: KeyVariables<TRemoveKey> & {
         out?: {
             error?: Error;
         };
     }): Promise<boolean>;
-    subscribe<TSubKey extends TKey>(key: TSubKey, trigger: Trigger, options?: KeyVariables<TSubKey>): Unsubscribe;
-    untypedSubscribe(key: string, trigger: Trigger): Unsubscribe;
-    emit<TEmitKey extends TKey>(key: TEmitKey, variables?: KeyVariables<TEmitKey>['variables']): void;
-    untypedEmit(key: string): void;
-    buildKeyApi: <TApiKey extends TKey>(key: TApiKey, options?: KeyVariables<TApiKey> & {
+    subscribe<TSubKey extends IndexableKeyOf<TValidate>>(key: TSubKey, trigger: Trigger<Exclude<Awaited<ReturnType<TValidate[TSubKey]>>, Error>>, options?: KeyVariables<TSubKey>): Unsubscribe;
+    untypedSubscribe(key: string, trigger: Trigger<Exclude<Awaited<ReturnType<TValidate[keyof TValidate]>>, Error>>): Unsubscribe;
+    emit<TEmitKey extends IndexableKeyOf<TValidate>>(key: TEmitKey, action: 'remove'): Promise<boolean>;
+    emit<TEmitKey extends IndexableKeyOf<TValidate>>(key: TEmitKey, action: 'set' | string, data: Exclude<Awaited<ReturnType<TValidate[TEmitKey]>>, Error>, options?: KeyVariables<TEmitKey> & {
+        validate?: boolean;
+        out?: {
+            error?: Error;
+        };
+    }): Promise<boolean>;
+    untypedEmit(key: string, action: 'remove'): Promise<boolean>;
+    untypedEmit<TFDeserialize extends boolean>(key: string, action: 'set' | string, data: Switch<TFDeserialize, TOutput, Exclude<Awaited<ReturnType<TValidate[keyof TValidate]>>, Error>>, options?: {
+        validate?: boolean;
+        deserialize?: TFDeserialize;
+        out?: {
+            error?: Error;
+        };
+    }): Promise<boolean>;
+    buildKeyApi: <TApiKey extends IndexableKeyOf<TValidate>>(key: TApiKey, options?: KeyVariables<TApiKey> & {
         validateOnGet?: boolean;
         validateOnSet?: boolean;
+        validateOnEmit?: boolean;
         out?: {
             error?: Error;
         };
@@ -35,11 +46,9 @@ export type BuildAsync<TValidate extends Record<string, (v: unknown) => Promise<
         get(defaultValue: Exclude<Awaited<ReturnType<TValidate[TApiKey]>>, Error>): Promise<Exclude<Awaited<ReturnType<TValidate[TApiKey]>>, Error>>;
         set(value: Exclude<Awaited<ReturnType<TValidate[TApiKey]>>, Error>): Promise<boolean>;
         remove(): Promise<boolean>;
-        subscribe(trigger: Trigger): Unsubscribe;
-        emit(): void;
+        subscribe(trigger: Trigger<Exclude<Awaited<ReturnType<TValidate[TApiKey]>>, Error>>): Unsubscribe;
+        emit(action: 'remove'): Promise<boolean>;
+        emit(action: 'set' | string, data: Exclude<Awaited<ReturnType<TValidate[TApiKey]>>, Error>): Promise<boolean>;
     };
-};
-export declare const buildAsync: <TValidate extends Record<string, (v: unknown) => Promise<unknown | Error>>, TSerialize extends Partial<Record<TKey, (v: Exclude<Awaited<ReturnType<TValidate[TKey]>>, Error>) => Promise<unknown>>>, TDeserialize extends Partial<Record<TKey, (v: unknown) => Promise<Exclude<Awaited<ReturnType<TValidate[TKey]>>, Error>>>>, TKey extends keyof TValidate & string>(schema: AsyncSchema<TValidate, TSerialize, TDeserialize, TKey, TKey>, store?: AsyncStore, defaultOptions?: {
-    validateOnGet?: boolean;
-    validateOnSet?: boolean;
-}) => ReturnType<BuildAsync<TValidate, TSerialize, TDeserialize, TKey>>;
+}>;
+export declare const buildAsync: <TValidate extends Record<string, (v: unknown) => Promise<unknown | Error>>, TInput, TOutput>(schema: AsyncSchema<TValidate, TInput, TOutput>) => ReturnType<BuildAsync<TValidate, TInput, TOutput>>;

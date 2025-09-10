@@ -1,6 +1,6 @@
 {
   "name": "blastore",
-  "version": "3.1.2",
+  "version": "3.1.3",
   "description": "Blazing-fast, type-safe key–value storage wrapper with minimal overhead.",
   "type": "module",
   "license": "MIT",
@@ -124,7 +124,7 @@
     "README.md",
     "LICENSE"
   ],
-  "main": "./dist/node/index.js",
+  "main": "./dist/web/index.js",
   "module": "./dist/web/index.js",
   "types": "./dist/web/index.d.ts",
   "react-native": "./dist/web/index.js",

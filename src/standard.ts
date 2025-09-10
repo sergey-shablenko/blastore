@@ -47,7 +47,7 @@ export type BuildStandard<
   >;
   set<TSetKey extends IndexableKeyOf<TValidate>>(
     key: TSetKey,
-    value: NonNullable<TValidate[TSetKey]['~standard']['types']>['output'],
+    value: NonNullable<TValidate[TSetKey]['~standard']['types']>['input'],
     options?: KeyVariables<TSetKey> & {
       validate?: boolean;
       out?: { error?: Error };
@@ -79,7 +79,7 @@ export type BuildStandard<
   emit<TEmitKey extends IndexableKeyOf<TValidate>>(
     key: TEmitKey,
     action: 'set' | string,
-    data: NonNullable<TValidate[TEmitKey]['~standard']['types']>['output'],
+    data: NonNullable<TValidate[TEmitKey]['~standard']['types']>['input'],
     options?: KeyVariables<TEmitKey> & {
       validate?: boolean;
       out?: { error?: Error };
@@ -92,7 +92,7 @@ export type BuildStandard<
     data: Switch<
       TFDeserialize,
       TOutput,
-      NonNullable<TValidate[keyof TValidate]['~standard']['types']>
+      NonNullable<TValidate[keyof TValidate]['~standard']['types']>['input']
     >,
     options?: {
       validate?: boolean;
@@ -118,7 +118,7 @@ export type BuildStandard<
       NonNullable<TValidate[TApiKey]['~standard']['types']>['output']
     >;
     set(
-      value: NonNullable<TValidate[TApiKey]['~standard']['types']>['output']
+      value: NonNullable<TValidate[TApiKey]['~standard']['types']>['input']
     ): MaybePromisify<TKeyMode[TApiKey], boolean>;
     remove(): MaybePromisify<TKeyMode[TApiKey], boolean>;
     subscribe(
@@ -129,7 +129,7 @@ export type BuildStandard<
     emit(action: 'remove'): MaybePromisify<TKeyMode[TApiKey], boolean>;
     emit(
       action: 'set' | string,
-      data: NonNullable<TValidate[TApiKey]['~standard']['types']>['output']
+      data: NonNullable<TValidate[TApiKey]['~standard']['types']>['input']
     ): MaybePromisify<TKeyMode[TApiKey], boolean>;
   };
 }>;

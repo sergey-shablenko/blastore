@@ -35,7 +35,9 @@ export function useStandardStore<
   );
   const [value, setValue] =
     useState<
-      Exclude<Awaited<ReturnType<TStore['schema']['validate'][TKey]>>, Error>
+      NonNullable<
+        TStore['schema']['validate'][TKey]['~standard']['types']
+      >['output']
     >(defaultValue);
   const [isInitialised, setIsInitialised] = useState(false);
 

@@ -83,14 +83,16 @@ export interface StandardSchema<
   validate: TValidate;
   keyMode: TKeyMode;
   defaultSerialize?: (
-    v: NonNullable<TValidate[keyof TValidate]['~standard']['types']>['output']
+    v: Awaited<
+      NonNullable<TValidate[keyof TValidate]['~standard']['types']>['input']
+    >
   ) => TInput;
   defaultDeserialize?: (
-    v: TOutput
+    v: Awaited<TOutput>
   ) => NonNullable<TValidate[keyof TValidate]['~standard']['types']>['output'];
   serialize?: Partial<{
     [K in keyof TValidate]: (
-      v: NonNullable<TValidate[K]['~standard']['types']>['output']
+      v: NonNullable<TValidate[K]['~standard']['types']>['input']
     ) => TKeyMode[K] extends 'async' ? Promise<TInput> : TInput;
   }>;
   deserialize?: Partial<{

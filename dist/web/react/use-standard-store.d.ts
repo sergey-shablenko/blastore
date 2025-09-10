@@ -8,7 +8,7 @@ export declare function useStandardStore<TStore extends ReturnType<BuildStandard
     validateOnEmit?: boolean;
 }): {
     isInitialised: boolean;
-    value: Exclude<Awaited<ReturnType<TStore["schema"]["validate"][TKey]>>, Error>;
+    value: NonNullable<TStore["schema"]["validate"][TKey]["~standard"]["types"]>["output"];
     error: undefined;
     set: ReturnType<ReturnType<BuildStandard<Pick<TStore["schema"]["validate"], TKey>, TKeyMode, any, any>>["buildKeyApi"]>["set"];
     remove: () => boolean | Promise<boolean>;

@@ -1,6 +1,6 @@
 {
   "name": "blastore",
-  "version": "3.1.1",
+  "version": "3.1.2",
   "description": "Blazing-fast, type-safe key–value storage wrapper with minimal overhead.",
   "type": "module",
   "license": "MIT",
@@ -60,53 +60,62 @@
   },
   "exports": {
     ".": {
+      "react-native": "./dist/web/index.js",
       "import": "./dist/web/index.js",
       "require": "./dist/node/index.js",
       "types": "./dist/web/index.d.ts"
     },
     "./sync": {
+      "react-native": "./dist/web/sync.js",
       "import": "./dist/web/sync.js",
       "require": "./dist/node/sync.js",
       "types": "./dist/web/sync.d.ts"
     },
     "./async": {
+      "react-native": "./dist/web/async.js",
       "import": "./dist/web/async.js",
       "require": "./dist/node/async.js",
       "types": "./dist/web/async.d.ts"
     },
     "./standard": {
+      "react-native": "./dist/web/standard.js",
       "import": "./dist/web/standard.js",
       "require": "./dist/node/standard.js",
       "types": "./dist/web/standard.d.ts"
     },
     "./sync-memory-storage": {
+      "react-native": "./dist/web/sync-memory-storage.js",
       "import": "./dist/web/sync-memory-storage.js",
       "require": "./dist/node/sync-memory-storage.js",
       "types": "./dist/web/sync-memory-storage.d.ts"
     },
     "./async-memory-storage": {
+      "react-native": "./dist/web/async-memory-storage.js",
       "import": "./dist/web/async-memory-storage.js",
       "require": "./dist/node/async-memory-storage.js",
       "types": "./dist/web/async-memory-storage.d.ts"
     },
     "./react/use-async-store": {
+      "react-native": "./dist/web/react/use-async-store.js",
       "import": "./dist/web/react/use-async-store.js",
       "require": "./dist/node/react/use-async-store.js",
       "types": "./dist/web/react/use-async-store.d.ts"
     },
     "./react/use-sync-store": {
+      "react-native": "./dist/web/react/use-sync-store.js",
       "import": "./dist/web/react/use-sync-store.js",
       "require": "./dist/node/react/use-sync-store.js",
       "types": "./dist/web/react/use-sync-store.d.ts"
     },
     "./react/use-standard-store": {
+      "react-native": "./dist/web/react/use-standard-store.js",
       "import": "./dist/web/react/use-standard-store.js",
       "require": "./dist/node/react/use-standard-store.js",
       "types": "./dist/web/react/use-standard-store.d.ts"
     },
     "./types": {
-      "require": "./dist/node/types.d.ts",
-      "types": "./dist/web/types.d.ts"
+      "types": "./dist/web/index.d.ts",
+      "default": "./dist/web/index.d.ts"
     }
   },
   "files": [
@@ -115,6 +124,10 @@
     "README.md",
     "LICENSE"
   ],
+  "main": "./dist/node/index.js",
+  "module": "./dist/web/index.js",
+  "types": "./dist/web/index.d.ts",
+  "react-native": "./dist/web/index.js",
   "scripts": {
     "format": "prettier **/*.ts --write",
     "build:node": "tsc -p tsconfig.node.json",

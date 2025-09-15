@@ -507,12 +507,13 @@ export const buildStandard = (<
         }
         insertValue = (insertValue as any).value;
       }
+      const beforeSerialization = insertValue;
       if (serializer) {
         insertValue = serializer(insertValue as any);
       }
 
       store.setItem(fullKey, insertValue);
-      _untypedEmit(fullKey, 'set', insertValue);
+      _untypedEmit(fullKey, 'set', beforeSerialization);
       return true as any;
     } catch (e) {
       if (out) {
@@ -618,7 +619,7 @@ export const buildStandard = (<
               }
               return;
             }
-            _untypedEmit(fullKey, action, value);
+            _untypedEmit(fullKey, action, value.value);
           })
           .catch((e) => {
             if (out) {
@@ -637,7 +638,7 @@ export const buildStandard = (<
             }
             return;
           }
-          _untypedEmit(fullKey, action, value);
+          _untypedEmit(fullKey, action, (value as any).value);
           return;
         } catch (e) {
           if (out) {
@@ -736,12 +737,13 @@ export const buildStandard = (<
               }
               insertValue = (insertValue as any).value;
             }
+            const beforeSerialization = insertValue;
             if (serializer) {
               insertValue = await serializer(insertValue as any);
             }
 
             await store.setItem(fullKey, insertValue);
-            _untypedEmit(fullKey, 'set', insertValue);
+            _untypedEmit(fullKey, 'set', beforeSerialization);
             return true as any;
           })
           .catch((e) => {
@@ -767,12 +769,13 @@ export const buildStandard = (<
           }
           insertValue = (insertValue as any).value;
         }
+        const beforeSerialization = insertValue;
         if (serializer) {
           insertValue = serializer(insertValue as any);
         }
 
         store.setItem(fullKey, insertValue);
-        _untypedEmit(fullKey, 'set', insertValue);
+        _untypedEmit(fullKey, 'set', beforeSerialization);
         return true as any;
       } catch (e) {
         if (out) {

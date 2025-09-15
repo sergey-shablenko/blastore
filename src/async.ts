@@ -378,11 +378,12 @@ export const buildAsync = (<
           return false;
         }
       }
+      const beforeSerialization = insertValue;
       if (serializer) {
         insertValue = await serializer(insertValue);
       }
       await store.setItem(fullKey, insertValue);
-      _untypedEmit(fullKey, 'set', insertValue);
+      _untypedEmit(fullKey, 'set', beforeSerialization);
       return true;
     } catch (e) {
       if (out) {
@@ -532,11 +533,12 @@ export const buildAsync = (<
             return false;
           }
         }
+        const beforeSerialization = insertValue;
         if (serializer) {
           insertValue = await serializer(insertValue as any);
         }
         await store.setItem(fullKey, insertValue);
-        _untypedEmit(fullKey, 'set', insertValue);
+        _untypedEmit(fullKey, 'set', beforeSerialization);
         return true;
       } catch (e) {
         if (out) {

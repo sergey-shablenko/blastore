@@ -290,11 +290,12 @@ export const buildStandard = ((schema) => {
                 }
                 insertValue = insertValue.value;
             }
+            const beforeSerialization = insertValue;
             if (serializer) {
                 insertValue = serializer(insertValue);
             }
             store.setItem(fullKey, insertValue);
-            _untypedEmit(fullKey, 'set', insertValue);
+            _untypedEmit(fullKey, 'set', beforeSerialization);
             return true;
         }
         catch (e) {
@@ -385,7 +386,7 @@ export const buildStandard = ((schema) => {
                         }
                         return;
                     }
-                    _untypedEmit(fullKey, action, value);
+                    _untypedEmit(fullKey, action, value.value);
                 })
                     .catch((e) => {
                     if (out) {
@@ -402,7 +403,7 @@ export const buildStandard = ((schema) => {
                         }
                         return;
                     }
-                    _untypedEmit(fullKey, action, value);
+                    _untypedEmit(fullKey, action, value.value);
                     return;
                 }
                 catch (e) {
@@ -478,11 +479,12 @@ export const buildStandard = ((schema) => {
                         }
                         insertValue = insertValue.value;
                     }
+                    const beforeSerialization = insertValue;
                     if (serializer) {
                         insertValue = await serializer(insertValue);
                     }
                     await store.setItem(fullKey, insertValue);
-                    _untypedEmit(fullKey, 'set', insertValue);
+                    _untypedEmit(fullKey, 'set', beforeSerialization);
                     return true;
                 })
                     .catch((e) => {
@@ -504,11 +506,12 @@ export const buildStandard = ((schema) => {
                     }
                     insertValue = insertValue.value;
                 }
+                const beforeSerialization = insertValue;
                 if (serializer) {
                     insertValue = serializer(insertValue);
                 }
                 store.setItem(fullKey, insertValue);
-                _untypedEmit(fullKey, 'set', insertValue);
+                _untypedEmit(fullKey, 'set', beforeSerialization);
                 return true;
             }
             catch (e) {
